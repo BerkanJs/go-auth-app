@@ -8,19 +8,38 @@ import (
 )
 
 func RegisterRoutes() {
-	// Auth endpoints (public)
-	http.HandleFunc("/login", handlers.LoginHandler)
-	http.HandleFunc("/refresh", handlers.RefreshHandler)
-	http.HandleFunc("/logout", handlers.JwtAuthMiddleware(handlers.LogoutHandler))
+	// Web form işlemleri (spesifik route'lar önce)
+	http.HandleFunc("/web-login", handlers.WebLoginHandler)
+	http.HandleFunc("/web-register", handlers.WebRegisterHandler)
+	http.HandleFunc("/web-logout", handlers.WebLogoutHandler)
+	http.HandleFunc("/user/update", handlers.AdminMiddleware(handlers.UpdateUserHandler))
+	http.HandleFunc("/web-delete", handlers.AdminMiddleware(handlers.WebDeletePersonHandler))
 
-	// Sağlık kontrolü (monitoring için temel endpoint)
-	http.HandleFunc("/health", handlers.HealthHandler)
+	// Blog işlemleri
+	http.HandleFunc("/blog/create", handlers.EditorMiddleware(handlers.CreateBlogHandler))
+	http.HandleFunc("/blog/update", handlers.EditorMiddleware(handlers.UpdateBlogHandler))
+	http.HandleFunc("/blog/delete", handlers.EditorMiddleware(handlers.DeleteBlogHandler))
 
-	// Kişi endpoint'leri (JWT ile korumalı)
-	http.HandleFunc("/add", handlers.JwtAuthMiddleware(handlers.AddPersonHandler))
-	http.HandleFunc("/all", handlers.JwtAuthMiddleware(handlers.GetAllPeopleHandler))
-	http.HandleFunc("/get", handlers.JwtAuthMiddleware(handlers.GetPersonByIDHandler))
-	http.HandleFunc("/delete", handlers.JwtAuthMiddleware(handlers.DeletePersonHandler))
+	// Statik dosyalar
+	http.HandleFunc("/static/", handlers.StaticHandler)
+	http.HandleFunc("/uploads/", handlers.StaticHandler)
+
+	// API endpoint'leri
+	http.HandleFunc("/api/login", handlers.LoginHandler)
+	http.HandleFunc("/api/refresh", handlers.RefreshHandler)
+	http.HandleFunc("/api/logout", handlers.JwtAuthMiddleware(handlers.LogoutHandler))
+	http.HandleFunc("/api/health", handlers.HealthHandler)
+	http.HandleFunc("/api/add", handlers.AddPersonHandler)
+	http.HandleFunc("/api/all", handlers.JwtAuthMiddleware(handlers.GetAllPeopleHandler))
+	http.HandleFunc("/api/get", handlers.JwtAuthMiddleware(handlers.GetPersonByIDHandler))
+	http.HandleFunc("/api/delete", handlers.JwtAuthMiddleware(handlers.DeletePersonHandler))
+
+	// Web arayüzü route'ları (genel route'lar sonra)
+	http.HandleFunc("/", handlers.HomeHandler)
+	http.HandleFunc("/login", handlers.LoginPageHandler)
+	http.HandleFunc("/register", handlers.RegisterPageHandler)
+	http.HandleFunc("/admin", handlers.AdminMiddleware(handlers.AdminPageHandler))
+	http.HandleFunc("/blogs", handlers.EditorMiddleware(handlers.BlogPageHandler))
 
 	http.Handle("/swagger/", httpSwagger.WrapHandler)
 }

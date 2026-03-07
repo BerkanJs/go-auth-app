@@ -5,20 +5,20 @@ package queries
 // People tablosu ile ilgili sorgular.
 const (
 	InsertPerson = `
-INSERT INTO people(name, surname, email, age, phone, password_hash)
-VALUES (?, ?, ?, ?, ?, ?)`
+INSERT INTO people(name, surname, email, age, phone, photo_path, role, password_hash)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
 	SelectAllPeople = `
-SELECT id, name, surname, email, age, phone, password_hash
+SELECT id, name, surname, email, age, phone, photo_path, role, password_hash
 FROM people`
 
 	SelectPersonByID = `
-SELECT id, name, surname, email, age, phone, password_hash
+SELECT id, name, surname, email, age, phone, photo_path, role, password_hash
 FROM people
 WHERE id = ?`
 
 	SelectPersonByEmail = `
-SELECT id, name, surname, email, age, phone, password_hash
+SELECT id, name, surname, email, age, phone, photo_path, role, password_hash
 FROM people
 WHERE email = ?`
 
@@ -48,4 +48,3 @@ UPDATE refresh_tokens
 SET revoked = 1, revoked_at = ?
 WHERE token = ? AND revoked = 0`
 )
-

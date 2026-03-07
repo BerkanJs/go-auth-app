@@ -13,21 +13,62 @@ import (
 
 // AddPersonHandler godoc
 // @Summary Yeni kişi ekle / kayıt ol
-// @Description JSON body ile yeni bir kişi ekler, email benzersiz olmalıdır
+// @Description JSON body veya multipart form ile yeni bir kişi ekler, email benzersiz olmalıdır
 // @Tags people
-// @Security BearerAuth
 // @Accept json
+// @Accept multipart/form-data
 // @Produce json
-// @Param person body models.CreatePersonRequest true "Kişi"
+// @Param person body models.CreatePersonRequest false "Kişi (JSON)"
+// @Param name formData string false "İsim (Form)"
+// @Param surname formData string false "Soyisim (Form)"
+// @Param email formData string false "Email (Form)"
+// @Param age formData int false "Yaş (Form)"
+// @Param phone formData string false "Telefon (Form)"
+// @Param password formData string false "Şifre (Form)"
+// @Param photo formData file false "Proje Fotoğrafı"
 // @Success 200 {object} models.PersonResponse
 // @Failure 400 {string} string
 // @Failure 500 {string} string
 // @Router /add [post]
 func AddPersonHandler(w http.ResponseWriter, r *http.Request) {
 	var req models.CreatePersonRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		shared.HandleError(w, err, http.StatusBadRequest, shared.ErrInvalidRequestBody)
-		return
+	var photoPath string
+
+	// Content-Type kontrolü
+	contentType := r.Header.Get("Content-Type")
+
+	if contentType != "" && len(contentType) > 19 && contentType[:19] == "multipart/form-data" {
+		// Multipart form handling
+		err := r.ParseMultipartForm(10 << 20) // 10MB max
+		if err != nil {
+			shared.HandleError(w, err, http.StatusBadRequest, shared.ErrInvalidRequestBody)
+			return
+		}
+
+		// Form verilerini al
+		req.Name = r.FormValue("name")
+		req.Surname = r.FormValue("surname")
+		req.Email = r.FormValue("email")
+		req.Age = parseIntFromForm(r.FormValue("age"))
+		req.Phone = r.FormValue("phone")
+		req.Password = r.FormValue("password")
+
+		// Fotoğraf yükle
+		file, header, err := r.FormFile("photo")
+		if err == nil {
+			photoPath, err = repository.UploadPhoto(file, header)
+			if err != nil {
+				shared.HandleError(w, err, http.StatusBadRequest, "Fotoğraf yüklenemedi")
+				return
+			}
+		}
+		req.PhotoPath = photoPath
+	} else {
+		// JSON handling
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			shared.HandleError(w, err, http.StatusBadRequest, shared.ErrInvalidRequestBody)
+			return
+		}
 	}
 
 	ctx := &registrationContext{Req: req}
@@ -42,8 +83,15 @@ func AddPersonHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := models.ToPersonResponse(ctx.Person)
-
 	json.NewEncoder(w).Encode(response)
+}
+
+// parseIntFromForm string'dan int'e çevirme helper
+func parseIntFromForm(s string) int {
+	if val, err := strconv.Atoi(s); err == nil {
+		return val
+	}
+	return 0
 }
 
 // GetAllPeopleHandler godoc
@@ -106,4 +154,5 @@ func DeletePersonHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"success": true, "message": "Kullanıcı başarıyla silindi"}`))
 }

@@ -15,12 +15,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// JWT ile ilgili sabitler.
+// JWT ile ilgili sabitler
 var (
-	jwtAccessSecret  = []byte("super-secret-access-key")
-	jwtRefreshSecret = []byte("super-secret-refresh-key")
-	accessTokenTTL   = 15 * time.Minute
-	refreshTokenTTL  = 7 * 24 * time.Hour
+	config           = shared.GetConfig()
+	jwtAccessSecret  = []byte(config.JWTAccessSecret)
+	jwtRefreshSecret = []byte(config.JWTRefreshSecret)
+	accessTokenTTL   = time.Duration(config.AccessTokenTTL) * time.Second
+	refreshTokenTTL  = time.Duration(config.RefreshTokenTTL) * time.Second
 )
 
 type jwtClaims struct {
@@ -45,11 +46,14 @@ func buildPersonFromCreateRequest(req models.CreatePersonRequest) (models.Person
 		Email:        req.Email,
 		Age:          req.Age,
 		Phone:        req.Phone,
+		PhotoPath:    req.PhotoPath,
+		Role:         req.Role,
 		PasswordHash: string(hashed),
 	}, nil
 }
 
-func generateAccessToken(userID int) (string, error) {
+// GenerateAccessToken access token oluşturur
+func GenerateAccessToken(userID int) (string, error) {
 	claims := jwtClaims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -61,7 +65,8 @@ func generateAccessToken(userID int) (string, error) {
 	return token.SignedString(jwtAccessSecret)
 }
 
-func generateRefreshToken(userID int) (string, error) {
+// GenerateRefreshToken refresh token oluşturur
+func GenerateRefreshToken(userID int) (string, error) {
 	claims := jwtClaims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -83,8 +88,9 @@ func generateRefreshToken(userID int) (string, error) {
 	return tokenStr, nil
 }
 
-func parseAccessToken(tokenStr string) (*jwtClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &jwtClaims{}, func(token *jwt.Token) (interface{}, error) {
+// ParseAccessToken access token'ı parse eder
+func ParseAccessToken(tokenString string) (*jwtClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &jwtClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return jwtAccessSecret, nil
 	})
 	if err != nil {
@@ -123,7 +129,7 @@ func JwtAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		claims, err := parseAccessToken(parts[1])
+		claims, err := ParseAccessToken(parts[1])
 		if shared.HandleError(w, err, http.StatusUnauthorized, shared.ErrInvalidOrExpiredToken) {
 			return
 		}
@@ -146,36 +152,61 @@ func JwtAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	var req models.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		shared.HandleError(w, err, http.StatusBadRequest, shared.ErrInvalidRequestBody)
+		shared.HandleCustomError(w, shared.NewValidationError("Geçersiz istek formatı", nil))
+		return
+	}
+
+	// Validasyon
+	validator := shared.NewValidator()
+	validator.ValidateRequired(req.Email, "Email")
+	validator.ValidateRequired(req.Password, "Şifre")
+
+	if validator.HasError() {
+		shared.HandleCustomError(w, validator.GetErrorAsCustomError())
 		return
 	}
 
 	person, err := repository.GetPersonByEmail(req.Email)
-	if shared.HandleError(w, err, http.StatusUnauthorized, shared.ErrUnauthorized) {
+	if err != nil {
+		shared.LogAuth("LOGIN_FAILED", req.Email, "User not found")
+		shared.HandleCustomError(w, shared.NewAuthError("Kullanıcı veya şifre hatalı"))
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(person.PasswordHash), []byte(req.Password)); err != nil {
-		shared.WriteError(w, http.StatusUnauthorized, shared.ErrUnauthorized, err)
+		shared.LogAuth("LOGIN_FAILED", req.Email, "Invalid password")
+		shared.HandleCustomError(w, shared.NewAuthError("Kullanıcı veya şifre hatalı"))
 		return
 	}
 
-	accessToken, err := generateAccessToken(person.ID)
+	accessToken, err := GenerateAccessToken(person.ID)
 	if err != nil {
-		shared.WriteError(w, http.StatusInternalServerError, shared.ErrAccessTokenGenerateFail, err)
+		shared.LogError("TOKEN_GENERATE", "Access token generation failed", map[string]interface{}{
+			"user_id": person.ID,
+			"error":   err,
+		})
+		shared.HandleCustomError(w, shared.NewInternalError("Access token üretilemedi"))
 		return
 	}
-	refreshToken, err := generateRefreshToken(person.ID)
+
+	refreshToken, err := GenerateRefreshToken(person.ID)
 	if err != nil {
-		shared.WriteError(w, http.StatusInternalServerError, shared.ErrRefreshTokenGenerateFail, err)
+		shared.LogError("TOKEN_GENERATE", "Refresh token generation failed", map[string]interface{}{
+			"user_id": person.ID,
+			"error":   err,
+		})
+		shared.HandleCustomError(w, shared.NewInternalError("Refresh token üretilemedi"))
 		return
 	}
+
+	// Başarılı giriş log'u
+	shared.LogAuth("LOGIN_SUCCESS", req.Email, "User logged in successfully")
 
 	resp := models.TokenResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}
-	json.NewEncoder(w).Encode(resp)
+	shared.WriteSuccess(w, "Giriş başarılı", resp)
 }
 
 // RefreshHandler godoc
@@ -207,7 +238,7 @@ func RefreshHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, err := generateAccessToken(claims.UserID)
+	accessToken, err := GenerateAccessToken(claims.UserID)
 	if err != nil {
 		shared.WriteError(w, http.StatusInternalServerError, shared.ErrAccessTokenGenerateFail, err)
 		return
@@ -255,5 +286,3 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("Logout başarılı"))
 }
-
-

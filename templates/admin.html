@@ -1,0 +1,206 @@
+{{define "content"}}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Admin Panel</h2>
+    <div class="btn-group" role="group">
+        <a href="/blogs" class="btn btn-info">Blog Yönetimi</a>
+        {{if eq .UserRole "admin"}}
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                Yeni Kullanıcı Ekle
+            </button>
+        {{end}}
+    </div>
+</div>
+
+{{if eq .UserRole "admin"}}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5>Kullanıcı Listesi</h5>
+    </div>
+    <div class="card-body">
+        {{if .Users}}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Fotoğraf</th>
+                            <th>İsim</th>
+                            <th>Soyisim</th>
+                            <th>Email</th>
+                            <th>Yaş</th>
+                            <th>Telefon</th>
+                            <th>Rol</th>
+                            <th>İşlemler</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .Users}}
+                        <tr>
+                            <td>{{.ID}}</td>
+                            <td>
+                                {{if .PhotoPath}}
+                                    <img src="{{.PhotoPath}}" alt="Profil" class="rounded-circle" style="width: 40px; height: 40px; object-fit: cover;">
+                                {{else}}
+                                    <div class="rounded-circle bg-secondary d-inline-block" style="width: 40px; height: 40px;"></div>
+                                {{end}}
+                            </td>
+                            <td>{{.Name}}</td>
+                            <td>{{.Surname}}</td>
+                            <td>{{.Email}}</td>
+                            <td>{{.Age}}</td>
+                            <td>{{.Phone}}</td>
+                            <td>
+                                <span class="badge {{if eq .Role "admin"}}bg-danger{{else}}bg-primary{{end}}">
+                                    {{.Role}}
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-info" onclick="editUser('{{.ID}}', '{{.Name}}', '{{.Surname}}', '{{.Email}}', '{{.Age}}', '{{.Phone}}', '{{.Role}}', '{{.PhotoPath}}')">Düzenle</button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteUser('{{.ID}}')">Sil</button>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+        {{else}}
+            <div class="text-center py-4">
+                <p class="text-muted">Henüz kullanıcı bulunmuyor.</p>
+            </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+<!-- Kullanıcı Ekle Modal -->
+<div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Yeni Kullanıcı Ekle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="/web-register" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="modalName" class="form-label">İsim</label>
+                                <input type="text" class="form-control" id="modalName" name="name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="modalSurname" class="form-label">Soyisim</label>
+                                <input type="text" class="form-control" id="modalSurname" name="surname" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="modalEmail" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="modalEmail" name="email" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="modalAge" class="form-label">Yaş</label>
+                                <input type="number" class="form-control" id="modalAge" name="age" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="modalPhone" class="form-label">Telefon</label>
+                                <input type="tel" class="form-control" id="modalPhone" name="phone">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="modalPhoto" class="form-label">Profil Fotoğrafı</label>
+                        <input type="file" class="form-control" id="modalPhoto" name="photo" accept="image/*">
+                    </div>
+                    <div class="mb-3">
+                        <label for="modalPassword" class="form-label">Şifre</label>
+                        <input type="password" class="form-control" id="modalPassword" name="password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Kullanıcı Düzenle Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Kullanıcı Düzenle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="/user/update" enctype="multipart/form-data">
+                <input type="hidden" id="editUserId" name="user_id">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editModalName" class="form-label">İsim</label>
+                                <input type="text" class="form-control" id="editModalName" name="name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editModalSurname" class="form-label">Soyisim</label>
+                                <input type="text" class="form-control" id="editModalSurname" name="surname" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editModalEmail" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="editModalEmail" name="email" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editModalAge" class="form-label">Yaş</label>
+                                <input type="number" class="form-control" id="editModalAge" name="age" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editModalPhone" class="form-label">Telefon</label>
+                                <input type="tel" class="form-control" id="editModalPhone" name="phone">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editModalRole" class="form-label">Rol</label>
+                        <select class="form-select" id="editModalRole" name="role" required>
+                            <option value="editor">Editor</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editModalPhoto" class="form-label">Profil Fotoğrafı</label>
+                        <input type="file" class="form-control" id="editModalPhoto" name="photo" accept="image/*">
+                        <small class="form-text text-muted">Yeni fotoğraf seçmezseniz mevcut fotoğraf korunur.</small>
+                        <div id="currentPhotoPreview" class="mt-2"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editModalPassword" class="form-label">Yeni Şifre</label>
+                        <input type="password" class="form-control" id="editModalPassword" name="password">
+                        <small class="form-text text-muted">Boş bırakırsanız mevcut şifre korunur.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">Güncelle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{{end}}

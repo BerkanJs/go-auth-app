@@ -21,13 +21,15 @@ import (
 
 func main() {
 	db.Init()
-	routes.RegisterRoutes()
-	fmt.Println("Server çalışıyor :8080")
+	fmt.Println("Server çalışıyor :8081")
 
 	// Global middleware zinciri: Logging -> CORS -> mux
 	var handler http.Handler = http.DefaultServeMux
 	handler = shared.CorsMiddleware(handler)
 	handler = shared.LoggingMiddleware(handler)
 
-	http.ListenAndServe(":8080", handler)
+	// Route'ları middleware'den SONRA kaydet
+	routes.RegisterRoutes()
+
+	http.ListenAndServe(":8081", handler)
 }

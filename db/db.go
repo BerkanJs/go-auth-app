@@ -4,14 +4,14 @@ import (
 	"database/sql"
 	"log"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 var DB *sql.DB
 
 func Init() {
 	var err error
-	DB, err = sql.Open("sqlite3", "people.db")
+	DB, err = sql.Open("sqlite", "people.db")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -23,6 +23,8 @@ func Init() {
         email TEXT NOT NULL UNIQUE,
         age INTEGER,
         phone TEXT,
+        photo_path TEXT,
+        role TEXT NOT NULL DEFAULT 'editor',
         password_hash TEXT NOT NULL
     );`
 
@@ -41,6 +43,25 @@ func Init() {
     );`
 
 	_, err = DB.Exec(refreshTokenTable)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	blogTable := `CREATE TABLE IF NOT EXISTS blogs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        summary TEXT,
+        image_path TEXT,
+        author_id INTEGER NOT NULL,
+        author_name TEXT NOT NULL,
+        published INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (author_id) REFERENCES people(id)
+    );`
+
+	_, err = DB.Exec(blogTable)
 	if err != nil {
 		log.Fatal(err)
 	}

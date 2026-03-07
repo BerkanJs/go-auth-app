@@ -1,0 +1,183 @@
+{{define "content"}}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Blog Yönetimi</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createBlogModal">
+        Yeni Blog Ekle
+    </button>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5>Blog Listesi</h5>
+    </div>
+    <div class="card-body">
+        {{if .Blogs}}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Görsel</th>
+                            <th>Başlık</th>
+                            <th>Özet</th>
+                            <th>Yazar</th>
+                            <th>Durum</th>
+                            <th>Oluşturulma</th>
+                            <th>İşlemler</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .Blogs}}
+                        <tr>
+                            <td>{{.ID}}</td>
+                            <td>
+                                {{if .ImagePath}}
+                                    <img src="{{.ImagePath}}" alt="Blog görseli" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;">
+                                {{else}}
+                                    <div class="bg-secondary d-inline-block" style="width: 60px; height: 40px; border-radius: 4px;"></div>
+                                {{end}}
+                            </td>
+                            <td>{{.Title}}</td>
+                            <td>{{.Summary}}</td>
+                            <td>{{.AuthorName}}</td>
+                            <td>
+                                {{if .Published}}
+                                    <span class="badge bg-success">Yayında</span>
+                                {{else}}
+                                    <span class="badge bg-secondary">Taslak</span>
+                                {{end}}
+                            </td>
+                            <td>{{.CreatedAt.Format "02.01.2006 15:04"}}</td>
+                            <td>
+                                <button class="btn btn-sm btn-info" onclick="editBlog('{{.ID}}')">Düzenle</button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteBlog('{{.ID}}')">Sil</button>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+        {{else}}
+            <div class="text-center py-4">
+                <p class="text-muted">Henüz blog bulunmuyor.</p>
+            </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Blog Ekle Modal -->
+<div class="modal fade" id="createBlogModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Yeni Blog Ekle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="/blog/create" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="blogTitle" class="form-label">Başlık</label>
+                        <input type="text" class="form-control" id="blogTitle" name="title" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="blogSummary" class="form-label">Özet</label>
+                        <textarea class="form-control" id="blogSummary" name="summary" rows="3" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="blogContent" class="form-label">İçerik</label>
+                        <textarea class="form-control" id="blogContent" name="content" rows="8" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="blogImage" class="form-label">Görsel</label>
+                        <input type="file" class="form-control" id="blogImage" name="image" accept="image/*">
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="blogPublished" name="published">
+                            <label class="form-check-label" for="blogPublished">
+                                Yayınla
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Blog Düzenle Modal (Dinamik) -->
+<div class="modal fade" id="editBlogModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Blog Düzenle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="/blog/update" enctype="multipart/form-data">
+                <input type="hidden" id="editBlogId" name="blog_id">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="editBlogTitle" class="form-label">Başlık</label>
+                        <input type="text" class="form-control" id="editBlogTitle" name="title" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editBlogSummary" class="form-label">Özet</label>
+                        <textarea class="form-control" id="editBlogSummary" name="summary" rows="3" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editBlogContent" class="form-label">İçerik</label>
+                        <textarea class="form-control" id="editBlogContent" name="content" rows="8" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editBlogImage" class="form-label">Görsel</label>
+                        <input type="file" class="form-control" id="editBlogImage" name="image" accept="image/*">
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="editBlogPublished" name="published">
+                            <label class="form-check-label" for="editBlogPublished">
+                                Yayınla
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">Güncelle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function editBlog(blogId) {
+    // Blog verilerini API'den alıp formu doldur
+    fetch(`/api/get?id=${blogId}`)
+        .then(response => response.json())
+        .then(blog => {
+            document.getElementById('editBlogId').value = blog.id;
+            document.getElementById('editBlogTitle').value = blog.title;
+            document.getElementById('editBlogSummary').value = blog.summary;
+            document.getElementById('editBlogContent').value = blog.content;
+            document.getElementById('editBlogPublished').checked = blog.published;
+            
+            const modal = new bootstrap.Modal(document.getElementById('editBlogModal'));
+            modal.show();
+        })
+        .catch(error => {
+            alert('Blog bilgileri alınamadı: ' + error.message);
+        });
+}
+
+function deleteBlog(blogId) {
+    if (confirm('Bu blog\'u silmek istediğinizden emin misiniz?')) {
+        window.location.href = `/blog/delete?id=${blogId}`;
+    }
+}
+</script>
+{{end}}

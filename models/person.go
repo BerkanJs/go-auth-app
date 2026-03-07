@@ -8,28 +8,34 @@ type Person struct {
 	Email        string `json:"email"`
 	Age          int    `json:"age"`
 	Phone        string `json:"phone"`
+	PhotoPath    string `json:"photoPath"`
+	Role         string `json:"role"`
 	PasswordHash string `json:"-"` // dışarıya asla gösterme
 }
 
 // CreatePersonRequest yeni kişi oluşturmak / kayıt olmak için kullanılan DTO.
 // ID ve PasswordHash burada yok, sadece düz şifre gelir.
 type CreatePersonRequest struct {
-	Name     string `json:"name"`
-	Surname  string `json:"surname"`
-	Email    string `json:"email"`
-	Age      int    `json:"age"`
-	Phone    string `json:"phone"`
-	Password string `json:"password"`
+	Name      string `json:"name"`
+	Surname   string `json:"surname"`
+	Email     string `json:"email"`
+	Age       int    `json:"age"`
+	Phone     string `json:"phone"`
+	PhotoPath string `json:"photoPath"`
+	Role      string `json:"role"`
+	Password  string `json:"password"`
 }
 
 // PersonResponse dışarıya döndüğümüz DTO.
 type PersonResponse struct {
-	ID      int    `json:"id"`
-	Name    string `json:"name"`
-	Surname string `json:"surname"`
-	Email   string `json:"email"`
-	Age     int    `json:"age"`
-	Phone   string `json:"phone"`
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	Surname   string `json:"surname"`
+	Email     string `json:"email"`
+	Age       int    `json:"age"`
+	Phone     string `json:"phone"`
+	PhotoPath string `json:"photoPath"`
+	Role      string `json:"role"`
 }
 
 // LoginRequest giriş için kullanılan DTO.
@@ -52,12 +58,14 @@ type RefreshTokenRequest struct {
 // ToPersonResponse bir Person entity'sini dışarıya döneceğimiz DTO'ya çevirir.
 func ToPersonResponse(p Person) PersonResponse {
 	return PersonResponse{
-		ID:      p.ID,
-		Name:    p.Name,
-		Surname: p.Surname,
-		Email:   p.Email,
-		Age:     p.Age,
-		Phone:   p.Phone,
+		ID:        p.ID,
+		Name:      p.Name,
+		Surname:   p.Surname,
+		Email:     p.Email,
+		Age:       p.Age,
+		Phone:     p.Phone,
+		PhotoPath: p.PhotoPath,
+		Role:      p.Role,
 	}
 }
 

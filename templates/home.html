@@ -1,0 +1,100 @@
+{{define "content"}}
+<div class="hero-section bg-primary text-white py-5 mb-5">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-6">
+                <h1 class="display-4 fw-bold mb-4">Blog Platformu</h1>
+                <p class="lead mb-4">Yazılımcılar için modern blog yönetim sistemi. İçeriklerinizi kolayca oluşturun, yönetin ve yayınlayın.</p>
+                {{if not .IsAuthenticated}}
+                    <div class="d-flex gap-3">
+                        <a href="/login" class="btn btn-light btn-lg">Giriş Yap</a>
+                        <a href="/register" class="btn btn-outline-light btn-lg">Kayıt Ol</a>
+                    </div>
+                {{else}}
+                    <div class="d-flex gap-3">
+                        {{if eq .UserRole "admin"}}
+                            <a href="/admin" class="btn btn-light btn-lg">Admin Panel</a>
+                        {{end}}
+                        <a href="/blogs" class="btn btn-outline-light btn-lg">Blog Yönetimi</a>
+                    </div>
+                {{end}}
+            </div>
+            <div class="col-lg-6">
+                <div class="text-center">
+                    <i class="bi bi-journal-text" style="font-size: 8rem;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="mb-4">Son Blog Yazıları</h2>
+        </div>
+    </div>
+    
+    {{if .Blogs}}
+        <div class="row">
+            {{range .Blogs}}
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card h-100">
+                    {{if .ImagePath}}
+                        <img src="{{.ImagePath}}" class="card-img-top" alt="{{.Title}}" style="height: 200px; object-fit: cover;">
+                    {{else}}
+                        <div class="card-img-top bg-secondary d-flex align-items-center justify-content-center" style="height: 200px;">
+                            <i class="bi bi-image text-white" style="font-size: 3rem;"></i>
+                        </div>
+                    {{end}}
+                    <div class="card-body d-flex flex-column">
+                        <h5 class="card-title">{{.Title}}</h5>
+                        <p class="card-text">{{.Summary}}</p>
+                        <div class="mt-auto">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">
+                                    <i class="bi bi-person"></i> {{.AuthorName}}
+                                </small>
+                                <small class="text-muted">
+                                    <i class="bi bi-calendar"></i> {{.CreatedAt.Format "02.01.2006"}}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {{end}}
+        </div>
+        
+        <div class="text-center mt-4">
+            <a href="/blogs" class="btn btn-outline-primary">Tüm Blogları Gör</a>
+        </div>
+    {{else}}
+        <div class="text-center py-5">
+            <i class="bi bi-journal-x text-muted" style="font-size: 4rem;"></i>
+            <h3 class="text-muted mt-3">Henüz blog yazısı bulunmuyor</h3>
+            <p class="text-muted">Yayınlanmış blog yazısı eklendiğinde burada görünecektir.</p>
+        </div>
+    {{end}}
+</div>
+
+<style>
+.hero-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+}
+
+.card-img-top {
+    border-top-left-radius: 0.375rem;
+    border-top-right-radius: 0.375rem;
+}
+</style>
+{{end}}
