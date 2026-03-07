@@ -105,7 +105,7 @@ func parseIntFromForm(s string) int {
 // @Router /all [get]
 func GetAllPeopleHandler(w http.ResponseWriter, r *http.Request) {
 	people, err := repository.GetAllPeople()
-	if shared.HandleError(w, err, http.StatusInternalServerError, err.Error()) {
+	if shared.HandleError(w, err, http.StatusInternalServerError, "Kullanıcılar getirilemedi") {
 		return
 	}
 
@@ -150,7 +150,7 @@ func DeletePersonHandler(w http.ResponseWriter, r *http.Request) {
 	idStr := r.URL.Query().Get("id")
 	id, _ := strconv.Atoi(idStr)
 	err := repository.DeletePerson(id)
-	if shared.HandleError(w, err, http.StatusInternalServerError, err.Error()) {
+	if shared.HandleError(w, err, http.StatusInternalServerError, "Kullanıcı silinemedi") {
 		return
 	}
 	w.WriteHeader(http.StatusOK)

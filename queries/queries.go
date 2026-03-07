@@ -32,6 +32,47 @@ DELETE FROM people
 WHERE id = ?`
 )
 
+// Blogs tablosu ile ilgili sorgular.
+const (
+	InsertBlog = `
+INSERT INTO blogs(title, content, summary, image_path, author_id, author_name, published, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	SelectAllBlogs = `
+SELECT id, title, content, summary, image_path, author_id, author_name, published, created_at, updated_at
+FROM blogs
+ORDER BY created_at DESC`
+
+	SelectPublishedBlogs = `
+SELECT id, title, content, summary, image_path, author_id, author_name, published, created_at, updated_at
+FROM blogs
+WHERE published = 1
+ORDER BY created_at DESC`
+
+	SelectBlogByID = `
+SELECT id, title, content, summary, image_path, author_id, author_name, published, created_at, updated_at
+FROM blogs
+WHERE id = ?`
+
+	SelectBlogsByAuthor = `
+SELECT id, title, content, summary, image_path, author_id, author_name, published, created_at, updated_at
+FROM blogs
+WHERE author_id = ?
+ORDER BY created_at DESC`
+
+	UpdateBlogQuery = `
+UPDATE blogs
+SET title = ?, content = ?, summary = ?, image_path = ?, published = ?, updated_at = ?
+WHERE id = ?`
+
+	UpdateBlogPublishStatusQuery = `
+UPDATE blogs
+SET published = ?, updated_at = ?
+WHERE id = ?`
+
+	DeleteBlogByID = `DELETE FROM blogs WHERE id = ?`
+)
+
 // Refresh token tablosu ile ilgili sorgular.
 const (
 	InsertRefreshToken = `

@@ -1,19 +1,19 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
 	"go-kisi-api/models"
 	"go-kisi-api/repository"
+	"go-kisi-api/service"
 	"go-kisi-api/shared"
 )
 
 // BlogPageHandler blog sayfasını gösterir
 func BlogPageHandler(w http.ResponseWriter, r *http.Request) {
 	data := shared.GetTemplateData(r)
-
 	if !data.IsAuthenticated {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
@@ -21,24 +21,16 @@ func BlogPageHandler(w http.ResponseWriter, r *http.Request) {
 
 	data.Title = "Blog Yönetimi"
 
-	// Kullanıcının rolüne göre blog'ları getir
-	var blogs []models.Blog
-	var err error
-
-	if data.UserRole == "admin" {
-		blogs, err = repository.GetAllBlogs()
-	} else {
-		// Editor ise sadece kendi blog'larını görebilir
-		claims, _ := shared.ParseAccessToken(getTokenFromCookie(r))
-		blogs, err = repository.GetBlogsByAuthor(claims.UserID)
+	claims, err := shared.ParseAccessToken(getTokenFromCookie(r))
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
 	}
 
+	blogs, err := service.GetBlogsForUser(data.UserRole, claims.UserID)
 	if err != nil {
-		data.ErrorMessage = "Blog'lar yüklenirken hata oluştu: " + err.Error()
-		shared.LogError("BLOG_LOAD_ERROR", "Failed to load blogs", map[string]interface{}{
-			"error":     err.Error(),
-			"user_role": data.UserRole,
-		})
+		shared.LogError("BLOG_PAGE_ERROR", "Failed to load blogs", map[string]interface{}{"error": err.Error(), "user_role": data.UserRole})
+		data.ErrorMessage = "Blog'lar yüklenirken bir hata oluştu."
 		renderTemplate(w, "blog.html", data)
 		return
 	}
@@ -60,49 +52,38 @@ func CreateBlogHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Form verilerini işle
-	claims, _ := ParseAccessToken(getTokenFromCookie(r))
-
-	req := models.CreateBlogRequest{
-		Title:     r.FormValue("title"),
-		Content:   r.FormValue("content"),
-		Summary:   r.FormValue("summary"),
-		Published: r.FormValue("published") == "on",
+	claims, err := shared.ParseAccessToken(getTokenFromCookie(r))
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
 	}
 
-	// Fotoğraf yükle
+	title := r.FormValue("title")
+	content := r.FormValue("content")
+	summary := r.FormValue("summary")
+	published := r.FormValue("published") == "on"
+
+	var imagePath string
 	file, header, err := r.FormFile("image")
 	if err == nil {
-		imagePath, err := repository.UploadPhoto(file, header)
+		imagePath, err = repository.UploadPhoto(file, header)
 		if err != nil {
-			data.ErrorMessage = "Fotoğraf yüklenemedi: " + err.Error()
+			shared.LogError("BLOG_PHOTO_ERROR", "Photo upload failed", map[string]interface{}{"error": err.Error()})
+			data.ErrorMessage = "Görsel yüklenemedi."
 			renderTemplate(w, "blog.html", data)
 			return
 		}
-		req.ImagePath = imagePath
 	}
 
-	// Blog oluştur
-	blog := models.Blog{
-		Title:      req.Title,
-		Content:    req.Content,
-		Summary:    req.Summary,
-		ImagePath:  req.ImagePath,
-		AuthorID:   claims.UserID,
-		AuthorName: data.UserName,
-		Published:  req.Published,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
-	}
-
-	_, err = repository.CreateBlog(blog)
-	if err != nil {
-		data.ErrorMessage = "Blog oluşturulurken hata oluştu: " + err.Error()
+	if _, err := service.CreateBlog(title, content, summary, imagePath, published, claims.UserID, data.UserName); err != nil {
+		shared.LogError("BLOG_CREATE_ERROR", "Failed to create blog", map[string]interface{}{"error": err.Error()})
+		data.ErrorMessage = "Blog oluşturulurken bir hata oluştu."
 		renderTemplate(w, "blog.html", data)
 		return
 	}
 
-	// Başarılı mesajı ayarla ve yönlendir
+	shared.LogInfo("BLOG_CREATED", "Blog created successfully", map[string]interface{}{"author_id": claims.UserID})
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "success_message",
 		Value:    "Blog başarıyla oluşturuldu!",
@@ -126,76 +107,51 @@ func UpdateBlogHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Blog ID'sini al
+	claims, err := shared.ParseAccessToken(getTokenFromCookie(r))
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
 	blogID, err := strconv.Atoi(r.FormValue("blog_id"))
 	if err != nil {
-		data.ErrorMessage = "Geçersiz blog ID"
+		data.ErrorMessage = "Geçersiz blog ID."
 		renderTemplate(w, "blog.html", data)
 		return
 	}
 
-	// Blog'u kontrol et (yetki kontrolü)
-	blog, err := repository.GetBlogByID(blogID)
-	if err != nil {
-		data.ErrorMessage = "Blog bulunamadı"
-		renderTemplate(w, "blog.html", data)
-		return
-	}
+	title := r.FormValue("title")
+	content := r.FormValue("content")
+	summary := r.FormValue("summary")
+	published := r.FormValue("published") == "on"
 
-	claims, _ := ParseAccessToken(getTokenFromCookie(r))
-
-	// Yetki kontrolü: admin herkesin blog'unu düzenleyebilir, editor sadece kendi blog'unu
-	if data.UserRole != "admin" && blog.AuthorID != claims.UserID {
-		data.ErrorMessage = "Bu blog'u düzenleme yetkiniz yok"
-		renderTemplate(w, "blog.html", data)
-		return
-	}
-
-	// Form verilerini işle
-	req := models.UpdateBlogRequest{
-		ID:        blogID,
-		Title:     r.FormValue("title"),
-		Content:   r.FormValue("content"),
-		Summary:   r.FormValue("summary"),
-		Published: r.FormValue("published") == "on",
-	}
-
-	// Fotoğraf yükle
+	var imagePath string
 	file, header, err := r.FormFile("image")
 	if err == nil {
-		imagePath, err := repository.UploadPhoto(file, header)
+		imagePath, err = repository.UploadPhoto(file, header)
 		if err != nil {
-			data.ErrorMessage = "Fotoğraf yüklenemedi: " + err.Error()
+			shared.LogError("BLOG_PHOTO_ERROR", "Photo upload failed", map[string]interface{}{"error": err.Error()})
+			data.ErrorMessage = "Görsel yüklenemedi."
 			renderTemplate(w, "blog.html", data)
 			return
 		}
-		req.ImagePath = imagePath
-	} else {
-		req.ImagePath = blog.ImagePath // Mevcut fotoğrafı koru
 	}
 
-	// Blog güncelle
-	updatedBlog := models.Blog{
-		ID:         req.ID,
-		Title:      req.Title,
-		Content:    req.Content,
-		Summary:    req.Summary,
-		ImagePath:  req.ImagePath,
-		AuthorID:   blog.AuthorID,
-		AuthorName: blog.AuthorName,
-		Published:  req.Published,
-		CreatedAt:  blog.CreatedAt,
-		UpdatedAt:  time.Now(),
-	}
-
-	err = repository.UpdateBlog(updatedBlog)
+	err = service.UpdateBlog(blogID, title, content, summary, imagePath, published, data.UserRole, claims.UserID)
 	if err != nil {
-		data.ErrorMessage = "Blog güncellenirken hata oluştu: " + err.Error()
+		shared.LogError("BLOG_UPDATE_ERROR", "Failed to update blog", map[string]interface{}{"blog_id": blogID, "error": err.Error()})
+		switch {
+		case errors.Is(err, service.ErrBlogNotFound):
+			data.ErrorMessage = "Blog bulunamadı."
+		case errors.Is(err, service.ErrPermissionDenied):
+			data.ErrorMessage = "Bu blogu düzenleme yetkiniz yok."
+		default:
+			data.ErrorMessage = "Blog güncellenirken bir hata oluştu."
+		}
 		renderTemplate(w, "blog.html", data)
 		return
 	}
 
-	// Başarılı mesajı ayarla ve yönlendir
 	http.SetCookie(w, &http.Cookie{
 		Name:     "success_message",
 		Value:    "Blog başarıyla güncellendi!",
@@ -208,44 +164,40 @@ func UpdateBlogHandler(w http.ResponseWriter, r *http.Request) {
 
 // DeleteBlogHandler blog siler
 func DeleteBlogHandler(w http.ResponseWriter, r *http.Request) {
-	blogID, err := strconv.Atoi(r.URL.Query().Get("id"))
-	if err != nil {
-		http.Error(w, "Geçersiz blog ID", http.StatusBadRequest)
-		return
-	}
-
 	data := shared.GetTemplateData(r)
 	if !data.IsAuthenticated {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 
-	// Blog'u kontrol et
-	blog, err := repository.GetBlogByID(blogID)
+	blogID, err := strconv.Atoi(r.URL.Query().Get("id"))
 	if err != nil {
-		data.ErrorMessage = "Blog bulunamadı"
+		data.ErrorMessage = "Geçersiz blog ID."
 		renderTemplate(w, "blog.html", data)
 		return
 	}
 
-	claims, _ := ParseAccessToken(getTokenFromCookie(r))
-
-	// Yetki kontrolü
-	if data.UserRole != "admin" && blog.AuthorID != claims.UserID {
-		data.ErrorMessage = "Bu blog'u silme yetkiniz yok"
-		renderTemplate(w, "blog.html", data)
-		return
-	}
-
-	// Blog sil
-	err = repository.DeleteBlog(blogID)
+	claims, err := shared.ParseAccessToken(getTokenFromCookie(r))
 	if err != nil {
-		data.ErrorMessage = "Blog silinirken hata oluştu: " + err.Error()
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	err = service.DeleteBlog(blogID, data.UserRole, claims.UserID)
+	if err != nil {
+		shared.LogError("BLOG_DELETE_ERROR", "Failed to delete blog", map[string]interface{}{"blog_id": blogID, "error": err.Error()})
+		switch {
+		case errors.Is(err, service.ErrBlogNotFound):
+			data.ErrorMessage = "Blog bulunamadı."
+		case errors.Is(err, service.ErrPermissionDenied):
+			data.ErrorMessage = "Bu blogu silme yetkiniz yok."
+		default:
+			data.ErrorMessage = "Blog silinirken bir hata oluştu."
+		}
 		renderTemplate(w, "blog.html", data)
 		return
 	}
 
-	// Başarılı mesajı ayarla ve yönlendir
 	http.SetCookie(w, &http.Cookie{
 		Name:     "success_message",
 		Value:    "Blog başarıyla silindi!",

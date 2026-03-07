@@ -1,17 +1,16 @@
 package handlers
 
 import (
+	"errors"
+	"mime/multipart"
 	"net/http"
-	"strconv"
 
-	"go-kisi-api/models"
 	"go-kisi-api/repository"
+	"go-kisi-api/service"
 	"go-kisi-api/shared"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
-// UpdateUserHandler kullanıcı günceller
+// UpdateUserHandler kullanıcı günceller (sadece admin)
 func UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
@@ -24,91 +23,62 @@ func UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sadece admin kullanıcı güncelleyebilir
 	if data.UserRole != "admin" {
-		data.ErrorMessage = "Kullanıcı güncelleme yetkiniz yok"
+		data.ErrorMessage = "Kullanıcı güncelleme yetkiniz yok."
 		renderTemplate(w, "admin.html", data)
 		return
 	}
 
-	// Kullanıcı ID'sini al
-	userID, err := strconv.Atoi(r.FormValue("user_id"))
-	if err != nil {
-		data.ErrorMessage = "Geçersiz kullanıcı ID"
+	userID := parseIntFromForm(r.FormValue("user_id"))
+	if userID == 0 {
+		data.ErrorMessage = "Geçersiz kullanıcı ID."
 		renderTemplate(w, "admin.html", data)
 		return
 	}
 
-	// Mevcut kullanıcı bilgisini al
-	person, err := repository.GetPersonByID(userID)
-	if err != nil {
-		data.ErrorMessage = "Kullanıcı bulunamadı"
-		renderTemplate(w, "admin.html", data)
-		return
-	}
-
-	// Form verilerini işle
-	updatedPerson := models.Person{
-		ID:        userID,
-		Name:      r.FormValue("name"),
-		Surname:   r.FormValue("surname"),
-		Email:     r.FormValue("email"),
-		Age:       parseIntFromForm(r.FormValue("age")),
-		Phone:     r.FormValue("phone"),
-		Role:      r.FormValue("role"),
-		PhotoPath: person.PhotoPath, // Mevcut fotoğrafı koru
-	}
-
-	// Email değişiyse benzersiz mi kontrol et
-	if updatedPerson.Email != person.Email {
-		exists, err := repository.EmailExists(updatedPerson.Email)
-		if err != nil {
-			data.ErrorMessage = "Email kontrolü sırasında hata oluştu"
-			renderTemplate(w, "admin.html", data)
-			return
-		}
-		if exists {
-			data.ErrorMessage = "Bu email zaten kayıtlı"
-			renderTemplate(w, "admin.html", data)
-			return
-		}
-	}
-
-	// Fotoğraf yükle
+	// Yeni fotoğraf varsa yükle
+	var newPhotoPath string
 	file, header, err := r.FormFile("photo")
 	if err == nil {
-		photoPath, err := repository.UploadPhoto(file, header)
+		newPhotoPath, err = uploadIfProvided(file, header)
 		if err != nil {
-			data.ErrorMessage = "Fotoğraf yüklenemedi: " + err.Error()
+			shared.LogError("USER_UPDATE_PHOTO_ERROR", "Photo upload failed", map[string]interface{}{"error": err.Error(), "user_id": userID})
+			data.ErrorMessage = "Fotoğraf yüklenemedi."
 			renderTemplate(w, "admin.html", data)
 			return
 		}
-		updatedPerson.PhotoPath = photoPath
 	}
 
-	// Şifre değişiyse hash'le
-	newPassword := r.FormValue("password")
-	if newPassword != "" {
-		hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
-		if err != nil {
-			data.ErrorMessage = "Şifre işlenirken hata oluştu"
-			renderTemplate(w, "admin.html", data)
-			return
+	req := service.UpdatePersonRequest{
+		UserID:       userID,
+		Name:         r.FormValue("name"),
+		Surname:      r.FormValue("surname"),
+		Email:        r.FormValue("email"),
+		Age:          parseIntFromForm(r.FormValue("age")),
+		Phone:        r.FormValue("phone"),
+		Role:         r.FormValue("role"),
+		NewPassword:  r.FormValue("password"),
+		NewPhotoPath: newPhotoPath,
+	}
+
+	if err := service.UpdatePerson(req); err != nil {
+		shared.LogError("USER_UPDATE_ERROR", "Failed to update user", map[string]interface{}{"error": err.Error(), "user_id": userID})
+		switch {
+		case errors.Is(err, service.ErrPersonNotFound):
+			data.ErrorMessage = "Kullanıcı bulunamadı."
+		case errors.Is(err, service.ErrEmailTaken):
+			data.ErrorMessage = "Bu email zaten kayıtlı."
+		case errors.Is(err, service.ErrPasswordHash):
+			data.ErrorMessage = "Şifre işlenirken bir hata oluştu."
+		default:
+			data.ErrorMessage = "Kullanıcı güncellenirken bir hata oluştu."
 		}
-		updatedPerson.PasswordHash = string(hashed)
-	} else {
-		updatedPerson.PasswordHash = person.PasswordHash // Mevcut şifreyi koru
-	}
-
-	// Kullanıcıyı güncelle (UpdatePerson fonksiyonunu repository'e eklememiz gerekiyor)
-	err = repository.UpdatePerson(updatedPerson)
-	if err != nil {
-		data.ErrorMessage = "Kullanıcı güncellenirken hata oluştu: " + err.Error()
 		renderTemplate(w, "admin.html", data)
 		return
 	}
 
-	// Başarılı mesajı ayarla ve yönlendir
+	shared.LogInfo("USER_UPDATED", "User updated successfully", map[string]interface{}{"user_id": userID})
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "success_message",
 		Value:    "Kullanıcı başarıyla güncellendi!",
@@ -117,4 +87,9 @@ func UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: false,
 	})
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// uploadIfProvided fotoğraf yükleme işlemini yönetir
+func uploadIfProvided(file multipart.File, header *multipart.FileHeader) (string, error) {
+	return repository.UploadPhoto(file, header)
 }

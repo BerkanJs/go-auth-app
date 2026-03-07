@@ -335,7 +335,10 @@ Herhangi bir adımda hata olursa pipeline durur ve hata yukarı taşınır.
 2. bcrypt ile şifreyi doğrula
 3. Access token üret
 4. `auth_token` cookie'sini set et (HttpOnly, 1 saat)
-5. Role göre yönlendir: `admin` → `/admin`, `editor` → `/editor`
+5. Role göre yönlendir: `editor` → `/editor`, diğerleri → `/admin`
+
+**`LoginPageHandler` / `RegisterPageHandler`**
+- Zaten giriş yapılmışsa role göre yönlendirir: `editor` → `/editor`, diğerleri → `/admin`
 
 **`WebRegisterHandler` (POST /web-register)**
 1. `ParseMultipartForm(32MB)` ile form'u parse et
@@ -370,7 +373,7 @@ Herhangi bir adımda hata olursa pipeline durur ve hata yukarı taşınır.
 **`UpdateBlogHandler` (POST /blog/update)**
 1. `blog_id` ile mevcut blog'u çek
 2. Yetki kontrolü: admin her blog'u, editor yalnızca kendi blog'unu düzenleyebilir
-3. Yeni görsel varsa yükle, yoksa mevcut yolu koru
+3. Yeni görsel varsa yükle ve eski görseli diskten sil, yoksa mevcut yolu koru
 4. Blog'u güncelle, `/blogs`'a yönlendir
 
 **`DeleteBlogHandler` (GET /blog/delete)**
@@ -391,7 +394,7 @@ Herhangi bir adımda hata olursa pipeline durur ve hata yukarı taşınır.
 1. Sadece admin erişebilir
 2. `user_id` ile mevcut kullanıcıyı çek
 3. Email değişiyorsa benzersizlik kontrolü yap
-4. Yeni fotoğraf varsa yükle
+4. Yeni fotoğraf varsa yükle ve eski fotoğrafı diskten sil, yoksa mevcut yolu koru
 5. Yeni şifre varsa bcrypt ile hashle, yoksa mevcut hash'i koru
 6. Kullanıcıyı güncelle, `/admin`'e yönlendir
 
@@ -429,12 +432,17 @@ Herhangi bir adımda hata olursa pipeline durur ve hata yukarı taşınır.
 | `DeletePerson(id)` | ID'ye göre kullanıcı siler |
 | `UpdatePerson(p Person)` | Kullanıcı bilgilerini günceller |
 | `UploadPhoto(file, header)` | Fotoğrafı `uploads/` klasörüne kaydeder, URL yolunu döner |
+| `DeleteUploadedFile(urlPath)` | URL yoluyla belirtilen dosyayı diskten siler |
 
 `UploadPhoto` özellikleri:
 - Sadece `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp` uzantılarına izin verir
 - Rastgele 16 byte hex dosya adı üretir (çakışma engellenir)
 - `uploads/` klasörü yoksa otomatik oluşturur
 - Dosya yolunu `/uploads/filename.ext` formatında döner
+
+`DeleteUploadedFile` özellikleri:
+- `/uploads/...` formatındaki URL yolunu `uploads/...` dosya sistemi yoluna çevirir
+- Boş path veya bulunamayan dosya için sessizce devam eder (hata fırlatmaz)
 
 ### 10.2. `blog_repo.go`
 
@@ -467,7 +475,24 @@ Herhangi bir adımda hata olursa pipeline durur ve hata yukarı taşınır.
 - İzin verilen metodlar: `GET, POST, PUT, DELETE, OPTIONS`
 - Preflight (`OPTIONS`) isteklerine `204 No Content` ile anında yanıt verir
 
-### 11.2. Logging Middleware (`logging.go`)
+### 11.2. Rate Limiter (`rate_limiter.go`)
+
+IP başına sabit pencere (fixed window) sayacı ile istek sınırlandırma:
+
+- `NewRateLimiter(limit int, window time.Duration)` ile yapılandırılır
+- `sync.Mutex` kullanılarak thread-safe, dış bağımlılık yok
+- Süresi dolmuş kayıtlar arka planda periyodik olarak temizlenir
+- Reverse proxy arkasında çalışıyorsa `X-Forwarded-For` header'ından IP alınır, aksi hâlde `RemoteAddr` kullanılır
+- Limit aşıldığında `429 Too Many Requests` döner
+
+Şu an uygulandığı endpoint'ler (dakikada 10 istek / IP):
+
+| Endpoint | Açıklama |
+|---|---|
+| `POST /web-login` | Web form girişi |
+| `POST /api/login` | REST API girişi |
+
+### 11.4. Logging Middleware (`logging.go`)
 
 `loggingResponseWriter` wrapper'ı ile her istek için şunları loglar:
 
@@ -475,7 +500,7 @@ Herhangi bir adımda hata olursa pipeline durur ve hata yukarı taşınır.
 http request: method=POST path=/web-login status=302 duration=45ms bytes=0
 ```
 
-### 11.3. Doğrulama Katmanı (`validation.go`)
+### 11.5. Doğrulama Katmanı (`validation.go`)
 
 `Validator` struct ile zincir halinde doğrulama yapılır:
 
@@ -493,7 +518,7 @@ validator.ValidateName(req.Name, "İsim").ValidateEmail(req.Email).ValidatePassw
 | `ValidateRole` | `admin` veya `editor` olmalı |
 | `ValidateBlogRequest` | Başlık 3-200 karakter, içerik min 10 karakter |
 
-### 11.4. Template Veri Yönetimi (`web_helpers.go`)
+### 11.6. Template Veri Yönetimi (`web_helpers.go`)
 
 `GetTemplateData(r)` her sayfa handler'ının başında çağrılır:
 1. `auth_token` cookie'sini okur
@@ -523,7 +548,10 @@ type TemplateData struct {
 
 Tüm sayfalar `layout.html` temel şablonunu kullanır. Layout içerir:
 - Bootstrap 5 (CDN)
-- Navbar — giriş durumuna göre dinamik (giriş yapılmışsa kullanıcı adı, Admin Panel, Çıkış; yoksa Giriş, Kayıt Ol)
+- Navbar — role göre dinamik:
+  - Giriş yapılmamışsa: Giriş, Kayıt Ol
+  - `admin` rolündeyse: kullanıcı adı, Admin Panel, Çıkış
+  - `editor` rolündeyse: kullanıcı adı, Editor Panel, Çıkış
 - Global alert alanı — hata ve başarı mesajları, 5 saniye sonra otomatik kapanır
 - `/static/js/app.js`
 
@@ -620,7 +648,8 @@ POST /blog/create  →  published=1  →  Ana sayfada kart olarak görünür
 - **JWT Secret'ları:** Ortam değişkenleri üzerinden yapılandırılır. Production ortamında varsayılan değerler bırakılırsa uygulama panic verir.
 - **HttpOnly Cookie:** Web UI'da auth cookie `HttpOnly: true` ile set edilir; tarayıcı JavaScript'i erişemez.
 - **Email Benzersizliği:** Hem uygulama katmanında (`EmailExists`) hem DB `UNIQUE` constraint'i ile çift kayıt engellenir.
-- **Fotoğraf Yükleme:** Yalnızca belirli uzantılara izin verilir, rastgele dosya adı kullanılır, path traversal kontrolü yapılır.
+- **Fotoğraf Yükleme:** Yalnızca belirli uzantılara izin verilir, rastgele dosya adı kullanılır, path traversal kontrolü yapılır. Güncelleme işlemlerinde eski dosya diskten otomatik silinir.
+- **Rate Limiting:** `/api/login` ve `/web-login` endpoint'leri için IP başına dakikada 10 istek sınırı uygulanır; aşıldığında `429 Too Many Requests` döner.
 - **Rol Kontrolü:** Her korumalı route hem middleware'de hem handler içinde tekrar kontrol edilir.
 - **Statik Dosya Güvenliği:** `StaticHandler`, path traversal saldırılarına karşı `filepath.Abs` ile yol doğrulaması yapar.
 - **CORS:** Şu an `*` (herkese açık). Production'da belirli origin'lerle kısıtlanmalıdır.
@@ -640,9 +669,7 @@ POST /blog/create  →  published=1  →  Ana sayfada kart olarak görünür
 ### 15.2. Altyapı ve Güvenlik
 - **Şifre Sıfırlama Akışı** — E-posta ile doğrulama ve şifre yenileme
 - **E-posta Doğrulama** — Kayıt sonrası e-posta onayı
-- **Rate Limiting** — Brute-force saldırılarına karşı login endpoint'i için istek sınırlandırma
 - **CORS Origin Kısıtlaması** — `*` yerine belirli origin listesi
-- **Eski Fotoğraf Silme** — Kullanıcı veya blog görseli güncellendiğinde eski dosyayı diskten sil
 - **Production Docker Kurulumu** — `Dockerfile` ve `docker-compose.yml`
 
 ### 15.3. API Geliştirmeleri

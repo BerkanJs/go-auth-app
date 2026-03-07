@@ -14,7 +14,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// TemplateData web sayfaları için veri yapısı
+// TemplateData web sayfaları için veri yapısı (shared.TemplateData ile aynı, geriye dönük uyum)
 type TemplateData struct {
 	Title           string
 	IsAuthenticated bool
@@ -28,39 +28,30 @@ type TemplateData struct {
 
 // StaticHandler statik dosyaları sunar
 func StaticHandler(w http.ResponseWriter, r *http.Request) {
-	filePath := r.URL.Path[1:] // /static/... -> static/...
-
-	// Güvenlik kontrolü - sadece static klasöründen dosyalara izin ver
+	filePath := r.URL.Path[1:]
 	if !isPathSafe(filePath) {
 		http.NotFound(w, r)
 		return
 	}
-
 	http.ServeFile(w, r, filePath)
 }
 
-// isPathSafe dosya yolunun güvenli olup olmadığını kontrol eder
 func isPathSafe(path string) bool {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return false
 	}
-
 	staticAbs, err := filepath.Abs("static")
 	if err != nil {
 		return false
 	}
-
 	uploadsAbs, err := filepath.Abs("uploads")
 	if err != nil {
 		return false
 	}
-
-	// Yol static veya uploads klasörü içinde mi?
 	return hasPrefix(absPath, staticAbs) || hasPrefix(absPath, uploadsAbs)
 }
 
-// hasPrefix string'in prefix ile başlayıp başlamadığını kontrol eder
 func hasPrefix(s, prefix string) bool {
 	if len(s) < len(prefix) {
 		return false
@@ -73,10 +64,10 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 	data := shared.GetTemplateData(r)
 	data.Title = "Ana Sayfa"
 
-	// Yayınlanmış blog'ları getir
 	blogs, err := repository.GetPublishedBlogs()
 	if err != nil {
-		data.ErrorMessage = "Blog'lar yüklenirken hata oluştu: " + err.Error()
+		shared.LogError("HOME_LOAD_ERROR", "Failed to load published blogs", map[string]interface{}{"error": err.Error()})
+		data.ErrorMessage = "Blog'lar yüklenirken bir hata oluştu."
 		renderTemplate(w, "home.html", data)
 		return
 	}
@@ -89,13 +80,14 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
 	data := shared.GetTemplateData(r)
 	data.Title = "Giriş Yap"
-
-	// Zaten giriş yapmışsa admin paneline yönlendir
 	if data.IsAuthenticated {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		if data.UserRole == "editor" {
+			http.Redirect(w, r, "/editor", http.StatusSeeOther)
+		} else {
+			http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		}
 		return
 	}
-
 	renderTemplate(w, "login.html", data)
 }
 
@@ -103,92 +95,61 @@ func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
 func RegisterPageHandler(w http.ResponseWriter, r *http.Request) {
 	data := shared.GetTemplateData(r)
 	data.Title = "Kayıt Ol"
-
-	// Zaten giriş yapmışsa admin paneline yönlendir
 	if data.IsAuthenticated {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		if data.UserRole == "editor" {
+			http.Redirect(w, r, "/editor", http.StatusSeeOther)
+		} else {
+			http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		}
 		return
 	}
-
 	renderTemplate(w, "register.html", data)
 }
 
 // AdminPageHandler admin panelini gösterir
 func AdminPageHandler(w http.ResponseWriter, r *http.Request) {
 	data := shared.GetTemplateData(r)
-
-	shared.LogInfo("DEBUG", "AdminPageHandler called", map[string]interface{}{
-		"is_authenticated": data.IsAuthenticated,
-		"user_name":        data.UserName,
-		"user_role":        data.UserRole,
-	})
-
 	if !data.IsAuthenticated {
-		shared.LogInfo("DEBUG", "User not authenticated, redirecting to login", nil)
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 
 	data.Title = "Admin Panel"
 
-	// Tüm kullanıcıları getir
 	people, err := repository.GetAllPeople()
 	if err != nil {
-		shared.LogError("DEBUG", "Failed to get all people", map[string]interface{}{
-			"error": err.Error(),
-		})
-		data.ErrorMessage = "Kullanıcılar yüklenirken hata oluştu: " + err.Error()
+		shared.LogError("ADMIN_LOAD_ERROR", "Failed to load users", map[string]interface{}{"error": err.Error()})
+		data.ErrorMessage = "Kullanıcılar yüklenirken bir hata oluştu."
 		renderTemplate(w, "admin.html", data)
 		return
 	}
 
 	data.Users = models.ToPersonResponseList(people)
-
-	shared.LogInfo("DEBUG", "Rendering admin template", map[string]interface{}{
-		"user_count": len(data.Users),
-		"user_role":  data.UserRole,
-	})
-
 	renderTemplate(w, "admin.html", data)
 }
 
 // WebLoginHandler web üzerinden giriş yapar
 func WebLoginHandler(w http.ResponseWriter, r *http.Request) {
-	shared.LogInfo("DEBUG", "WebLoginHandler CALLED - ROUTING FIXED!", map[string]interface{}{
-		"method": r.Method,
-		"path":   r.URL.Path,
-	})
-
-	fmt.Printf("DEBUG: WebLoginHandler called - Method: %s, Path: %s\n", r.Method, r.URL.Path)
-
 	if r.Method != "POST" {
-		fmt.Printf("DEBUG: Method not POST, redirecting to login\n")
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 
-	fmt.Printf("DEBUG: Method is POST, processing login\n")
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 
-	fmt.Printf("DEBUG: Email: %s, Password length: %d\n", email, len(password))
-
 	person, err := repository.GetPersonByEmail(email)
 	if err != nil {
-		fmt.Printf("DEBUG: User not found: %v\n", err)
+		shared.LogAuth("LOGIN_FAILED", email, "User not found")
 		data := shared.GetTemplateData(r)
 		data.Title = "Giriş Yap"
 		data.ErrorMessage = "Email veya şifre hatalı"
 		renderTemplate(w, "login.html", data)
 		return
 	}
-
-	fmt.Printf("DEBUG: User found: %s %s (Role: %s)\n", person.Name, person.Surname, person.Role)
-	fmt.Printf("DEBUG: Stored hash: %s\n", person.PasswordHash)
-	fmt.Printf("DEBUG: Input password: %s\n", password)
 
 	if err := bcrypt.CompareHashAndPassword([]byte(person.PasswordHash), []byte(password)); err != nil {
-		fmt.Printf("DEBUG: Password mismatch: %v\n", err)
+		shared.LogAuth("LOGIN_FAILED", email, "Wrong password")
 		data := shared.GetTemplateData(r)
 		data.Title = "Giriş Yap"
 		data.ErrorMessage = "Email veya şifre hatalı"
@@ -196,34 +157,30 @@ func WebLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("DEBUG: Password correct, generating token\n")
-	// Token oluştur ve cookie'ye kaydet
 	accessToken, err := GenerateAccessToken(person.ID)
 	if err != nil {
-		fmt.Printf("DEBUG: Token generation failed: %v\n", err)
+		shared.LogError("LOGIN_TOKEN_ERROR", "Access token generation failed", map[string]interface{}{"user_id": person.ID, "error": err.Error()})
 		data := shared.GetTemplateData(r)
 		data.Title = "Giriş Yap"
-		data.ErrorMessage = "Giriş yapılırken hata oluştu"
+		data.ErrorMessage = "Giriş yapılırken bir hata oluştu."
 		renderTemplate(w, "login.html", data)
 		return
 	}
 
-	fmt.Printf("DEBUG: Token generated, setting cookie\n")
-	// Cookie'ye token'ı kaydet
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
 		Value:    accessToken,
 		Path:     "/",
-		MaxAge:   3600, // 1 saat
+		MaxAge:   3600,
 		HttpOnly: true,
 	})
 
-	// Role göre yönlendir
+	shared.LogAuth("LOGIN_SUCCESS", email, "Logged in via web")
+
 	redirectURL := "/admin"
 	if person.Role == "editor" {
 		redirectURL = "/editor"
 	}
-	fmt.Printf("DEBUG: Cookie set, redirecting to %s\n", redirectURL)
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
@@ -234,32 +191,24 @@ func WebRegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Form'u parse et (multipart/form-data için ParseMultipartForm kullanılmalı)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		fmt.Printf("DEBUG: Form parse error: %v\n", err)
+		shared.LogError("REGISTER_PARSE_ERROR", "Multipart form parse failed", map[string]interface{}{"error": err.Error()})
 		http.Redirect(w, r, "/register", http.StatusSeeOther)
 		return
 	}
 
-	// Form verilerini işle
 	req := models.CreatePersonRequest{
-		Name:      r.FormValue("name"),
-		Surname:   r.FormValue("surname"),
-		Email:     r.FormValue("email"),
-		Age:       shared.ParseIntFromForm(r.FormValue("age")),
-		Phone:     r.FormValue("phone"),
-		PhotoPath: "", // Bu sonradan doldurulacak
-		Role:      r.FormValue("role"),
-		Password:  r.FormValue("password"),
+		Name:     r.FormValue("name"),
+		Surname:  r.FormValue("surname"),
+		Email:    r.FormValue("email"),
+		Age:      shared.ParseIntFromForm(r.FormValue("age")),
+		Phone:    r.FormValue("phone"),
+		Role:     r.FormValue("role"),
+		Password: r.FormValue("password"),
 	}
 
-	fmt.Printf("DEBUG: WebRegister - Name: %s, Email: %s, Password: %s, Role: %s\n",
-		req.Name, req.Email, req.Password, req.Role)
-
-	// Validasyon
 	validator := shared.NewValidator()
 	validator.ValidateCreatePersonRequest(req)
-
 	if validator.HasError() {
 		data := shared.GetTemplateData(r)
 		data.Title = "Kayıt Ol"
@@ -268,46 +217,38 @@ func WebRegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fotoğraf yükle
 	file, header, err := r.FormFile("photo")
 	if err == nil {
 		photoPath, err := repository.UploadPhoto(file, header)
 		if err != nil {
-			shared.LogError("UPLOAD_ERROR", "Photo upload failed", map[string]interface{}{
-				"error": err.Error(),
-				"email": req.Email,
-			})
+			shared.LogError("REGISTER_PHOTO_ERROR", "Photo upload failed", map[string]interface{}{"error": err.Error(), "email": req.Email})
 			data := shared.GetTemplateData(r)
 			data.Title = "Kayıt Ol"
-			data.ErrorMessage = "Fotoğraf yüklenemedi: " + err.Error()
+			data.ErrorMessage = "Fotoğraf yüklenemedi."
 			renderTemplate(w, "register.html", data)
 			return
 		}
 		req.PhotoPath = photoPath
 	}
 
-	// Kayıt işlemini yap
 	ctx := &registrationContext{Req: req}
 	if err := runRegistrationPipeline(ctx); err != nil {
 		shared.LogAuth("REGISTER_FAILED", req.Email, err.Error())
 		data := shared.GetTemplateData(r)
 		data.Title = "Kayıt Ol"
 		if err == errEmailAlreadyExists {
-			data.ErrorMessage = "Bu email zaten kayıtlı"
+			data.ErrorMessage = "Bu email zaten kayıtlı."
 		} else {
-			data.ErrorMessage = "Kayıt olurken hata oluştu: " + err.Error()
+			data.ErrorMessage = "Kayıt olurken bir hata oluştu."
 		}
 		renderTemplate(w, "register.html", data)
 		return
 	}
 
-	// Başarılı kayıt log'u
 	shared.LogAuth("REGISTER_SUCCESS", req.Email, "User registered successfully")
 
-	// Başarılı kayıt sonrası admin paneline yönlendir (eğer giriş yapmışsa)
 	data := shared.GetTemplateData(r)
 	if data.IsAuthenticated {
-		// Admin paneline yönlendir ve başarı mesajını session'a kaydet
 		http.SetCookie(w, &http.Cookie{
 			Name:     "success_message",
 			Value:    "Kullanıcı başarıyla eklendi!",
@@ -317,14 +258,12 @@ func WebRegisterHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 	} else {
-		// Login sayfasına yönlendir
 		http.Redirect(w, r, "/login?registered=true", http.StatusSeeOther)
 	}
 }
 
 // WebLogoutHandler web üzerinden çıkış yapar
 func WebLogoutHandler(w http.ResponseWriter, r *http.Request) {
-	// Cookie'yi sil
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
 		Value:    "",
@@ -332,11 +271,10 @@ func WebLogoutHandler(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 	})
-
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-// WebDeletePersonHandler web üzerinden kullanıcı siler
+// WebDeletePersonHandler web üzerinden kullanıcı siler (AJAX)
 func WebDeletePersonHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -345,31 +283,24 @@ func WebDeletePersonHandler(w http.ResponseWriter, r *http.Request) {
 
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
-		http.Error(w, "ID parameter is required", http.StatusBadRequest)
+		http.Error(w, "ID parametresi gerekli", http.StatusBadRequest)
 		return
 	}
 
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		http.Error(w, "Geçersiz ID", http.StatusBadRequest)
 		return
 	}
 
-	// Kullanıcıyı sil
-	err = repository.DeletePerson(id)
-	if err != nil {
-		shared.LogError("WEB_DELETE_ERROR", "Failed to delete user", map[string]interface{}{
-			"user_id": id,
-			"error":   err.Error(),
-		})
-		http.Error(w, "Kullanıcı silinemedi: "+err.Error(), http.StatusInternalServerError)
+	if err := repository.DeletePerson(id); err != nil {
+		shared.LogError("WEB_DELETE_ERROR", "Failed to delete user", map[string]interface{}{"user_id": id, "error": err.Error()})
+		http.Error(w, "Kullanıcı silinemedi", http.StatusInternalServerError)
 		return
 	}
 
-	// Başarılı silme log'u
-	shared.LogAuth("USER_DELETED", fmt.Sprintf("ID: %d", id), "User deleted successfully via web")
+	shared.LogAuth("USER_DELETED", fmt.Sprintf("ID: %d", id), "User deleted via web")
 
-	// JSON response döndür
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"success": true, "message": "Kullanıcı başarıyla silindi"}`))
@@ -377,37 +308,17 @@ func WebDeletePersonHandler(w http.ResponseWriter, r *http.Request) {
 
 // renderTemplate template'i render eder
 func renderTemplate(w http.ResponseWriter, templateName string, data shared.TemplateData) {
-	shared.LogInfo("DEBUG", "Rendering template", map[string]interface{}{
-		"template_name": templateName,
-		"title":         data.Title,
-		"user_role":     data.UserRole,
-	})
-
-	// Template'leri parse et
 	templates, err := template.ParseFiles(
 		"templates/layout.html",
 		"templates/"+templateName,
 	)
 	if err != nil {
-		shared.LogError("DEBUG", "Template parse error", map[string]interface{}{
-			"error": err.Error(),
-		})
-		http.Error(w, "Template parse error: "+err.Error(), http.StatusInternalServerError)
+		shared.LogError("TEMPLATE_PARSE_ERROR", "Template parse failed", map[string]interface{}{"template": templateName, "error": err.Error()})
+		http.Error(w, "Sayfa yüklenemedi", http.StatusInternalServerError)
 		return
 	}
 
-	// Template'i execute et
-	err = templates.ExecuteTemplate(w, "layout", data)
-	if err != nil {
-		shared.LogError("DEBUG", "Template execute error", map[string]interface{}{
-			"error": err.Error(),
-			"data":  data,
-		})
-		http.Error(w, "Template execute error: "+err.Error(), http.StatusInternalServerError)
-		return
+	if err := templates.ExecuteTemplate(w, "layout", data); err != nil {
+		shared.LogError("TEMPLATE_EXEC_ERROR", "Template execute failed", map[string]interface{}{"template": templateName, "error": err.Error()})
 	}
-
-	shared.LogInfo("DEBUG", "Template rendered successfully", map[string]interface{}{
-		"template_name": templateName,
-	})
 }

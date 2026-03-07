@@ -14,7 +14,11 @@
             <div class="navbar-nav ms-auto">
                 {{if .IsAuthenticated}}
                     <span class="navbar-text me-3">Hoş geldin, {{.UserName}}!</span>
-                    <a class="nav-link" href="/admin">Admin Panel</a>
+                    {{if eq .UserRole "admin"}}
+                        <a class="nav-link" href="/admin">Admin Panel</a>
+                    {{else if eq .UserRole "editor"}}
+                        <a class="nav-link" href="/editor">Editor Panel</a>
+                    {{end}}
                     <a class="nav-link" href="/web-logout">Çıkış</a>
                 {{else}}
                     <a class="nav-link" href="/login">Giriş</a>

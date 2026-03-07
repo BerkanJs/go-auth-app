@@ -86,6 +86,17 @@ func UpdatePerson(p models.Person) error {
 	return err
 }
 
+// DeleteUploadedFile URL yoluyla belirtilen yüklenmiş dosyayı diskten siler.
+// Dosya bulunamazsa ya da boş path verilirse sessizce devam eder.
+func DeleteUploadedFile(urlPath string) {
+	if urlPath == "" {
+		return
+	}
+	// URL yolu "/uploads/..." formatında, dosya sistemi yolu "uploads/..." formatında
+	fsPath := strings.TrimPrefix(urlPath, "/")
+	os.Remove(fsPath)
+}
+
 // UploadPhoto yüklenen fotoğrafı kaydeder ve dosya yolunu döner
 func UploadPhoto(file multipart.File, header *multipart.FileHeader) (string, error) {
 	defer file.Close()
