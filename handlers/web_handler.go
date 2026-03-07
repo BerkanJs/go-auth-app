@@ -218,8 +218,13 @@ func WebLoginHandler(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 
-	fmt.Printf("DEBUG: Cookie set, redirecting to admin\n")
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	// Role göre yönlendir
+	redirectURL := "/admin"
+	if person.Role == "editor" {
+		redirectURL = "/editor"
+	}
+	fmt.Printf("DEBUG: Cookie set, redirecting to %s\n", redirectURL)
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
 // WebRegisterHandler web üzerinden kayıt yapar
@@ -229,8 +234,8 @@ func WebRegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Form'u parse et
-	if err := r.ParseForm(); err != nil {
+	// Form'u parse et (multipart/form-data için ParseMultipartForm kullanılmalı)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		fmt.Printf("DEBUG: Form parse error: %v\n", err)
 		http.Redirect(w, r, "/register", http.StatusSeeOther)
 		return

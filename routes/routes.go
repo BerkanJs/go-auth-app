@@ -39,6 +39,7 @@ func RegisterRoutes() {
 	http.HandleFunc("/login", handlers.LoginPageHandler)
 	http.HandleFunc("/register", handlers.RegisterPageHandler)
 	http.HandleFunc("/admin", handlers.AdminMiddleware(handlers.AdminPageHandler))
+	http.HandleFunc("/editor", handlers.EditorMiddleware(handlers.EditorPageHandler))
 	http.HandleFunc("/blogs", handlers.EditorMiddleware(handlers.BlogPageHandler))
 
 	http.Handle("/swagger/", httpSwagger.WrapHandler)

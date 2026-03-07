@@ -1,6 +1,6 @@
 {{define "content"}}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Blog Yönetimi</h2>
+    <h2>Editor Panel</h2>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createBlogModal">
         Yeni Blog Ekle
     </button>
@@ -8,7 +8,7 @@
 
 <div class="card">
     <div class="card-header">
-        <h5>Blog Listesi</h5>
+        <h5>Bloglarım</h5>
     </div>
     <div class="card-body">
         {{if .Blogs}}
@@ -20,7 +20,6 @@
                             <th>Görsel</th>
                             <th>Başlık</th>
                             <th>Özet</th>
-                            <th>Yazar</th>
                             <th>Durum</th>
                             <th>Oluşturulma</th>
                             <th>İşlemler</th>
@@ -39,7 +38,6 @@
                             </td>
                             <td>{{.Title}}</td>
                             <td>{{.Summary}}</td>
-                            <td>{{.AuthorName}}</td>
                             <td>
                                 {{if .Published}}
                                     <span class="badge bg-success">Yayında</span>
@@ -115,7 +113,7 @@
     </div>
 </div>
 
-<!-- Blog Düzenle Modal (Dinamik) -->
+<!-- Blog Düzenle Modal -->
 <div class="modal fade" id="editBlogModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -174,7 +172,7 @@ function editBlog(btn) {
 }
 
 function deleteBlog(blogId) {
-    if (confirm('Bu blog\'u silmek istediğinizden emin misiniz?')) {
+    if (confirm('Bu blogu silmek istediğinizden emin misiniz?')) {
         window.location.href = `/blog/delete?id=${blogId}`;
     }
 }
