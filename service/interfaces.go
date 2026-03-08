@@ -25,7 +25,11 @@ type BlogService interface {
 	DeleteBlog(ctx context.Context, blogID int, userRole string, userID int) error
 }
 
-// PersonService kişi güncelleme iş mantığını soyutlar.
+// PersonService kişi CRUD iş mantığını soyutlar.
 type PersonService interface {
+	CreatePerson(ctx context.Context, req models.CreatePersonRequest) (models.Person, error)
+	GetAllPeople(ctx context.Context) ([]models.Person, error)
+	GetPersonByID(ctx context.Context, id int) (models.Person, error)
+	DeletePerson(ctx context.Context, id int) error
 	UpdatePerson(ctx context.Context, req UpdatePersonRequest) error
 }

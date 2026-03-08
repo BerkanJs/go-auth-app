@@ -3,21 +3,23 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"go-kisi-api/models"
 	"go-kisi-api/repository"
+	"go-kisi-api/service"
 	"go-kisi-api/shared"
 )
 
 // PersonHandler API kişi endpoint'lerini yönetir.
 type PersonHandler struct {
-	personRepo repository.PersonRepository
+	personSvc service.PersonService
 }
 
-func NewPersonHandler(personRepo repository.PersonRepository) *PersonHandler {
-	return &PersonHandler{personRepo: personRepo}
+func NewPersonHandler(personSvc service.PersonService) *PersonHandler {
+	return &PersonHandler{personSvc: personSvc}
 }
 
 // AddPersonHandler godoc
@@ -31,12 +33,10 @@ func NewPersonHandler(personRepo repository.PersonRepository) *PersonHandler {
 // @Router /add [post]
 func (h *PersonHandler) AddPersonHandler(w http.ResponseWriter, r *http.Request) {
 	var req models.CreatePersonRequest
-	var photoPath string
 
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "" && len(contentType) > 19 && contentType[:19] == "multipart/form-data" {
-		err := r.ParseMultipartForm(10 << 20)
-		if err != nil {
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
 			shared.HandleError(w, err, http.StatusBadRequest, shared.ErrInvalidRequestBody)
 			return
 		}
@@ -49,13 +49,13 @@ func (h *PersonHandler) AddPersonHandler(w http.ResponseWriter, r *http.Request)
 
 		file, header, err := r.FormFile("photo")
 		if err == nil {
-			photoPath, err = repository.UploadPhoto(file, header)
+			photoPath, err := repository.UploadPhoto(file, header)
 			if err != nil {
 				shared.HandleError(w, err, http.StatusBadRequest, "Fotoğraf yüklenemedi")
 				return
 			}
+			req.PhotoPath = photoPath
 		}
-		req.PhotoPath = photoPath
 	} else {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			shared.HandleError(w, err, http.StatusBadRequest, shared.ErrInvalidRequestBody)
@@ -63,10 +63,10 @@ func (h *PersonHandler) AddPersonHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	regCtx := &registrationContext{Req: req}
-	if err := runRegistrationPipeline(r.Context(), regCtx, h.personRepo); err != nil {
+	person, err := h.personSvc.CreatePerson(r.Context(), req)
+	if err != nil {
 		switch {
-		case errors.Is(err, errEmailAlreadyExists):
+		case errors.Is(err, service.ErrEmailTaken):
 			shared.WriteError(w, http.StatusBadRequest, shared.ErrEmailAlreadyExists, nil)
 		default:
 			shared.WriteError(w, http.StatusInternalServerError, shared.ErrEmailCheckFailed, err)
@@ -74,7 +74,7 @@ func (h *PersonHandler) AddPersonHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	json.NewEncoder(w).Encode(models.ToPersonResponse(regCtx.Person))
+	shared.WriteSuccess(w, "Kullanıcı oluşturuldu", models.ToPersonResponse(person))
 }
 
 // GetAllPeopleHandler godoc
@@ -85,11 +85,11 @@ func (h *PersonHandler) AddPersonHandler(w http.ResponseWriter, r *http.Request)
 // @Success 200 {array} models.PersonResponse
 // @Router /all [get]
 func (h *PersonHandler) GetAllPeopleHandler(w http.ResponseWriter, r *http.Request) {
-	people, err := h.personRepo.GetAllPeople(r.Context())
+	people, err := h.personSvc.GetAllPeople(r.Context())
 	if shared.HandleError(w, err, http.StatusInternalServerError, "Kullanıcılar getirilemedi") {
 		return
 	}
-	json.NewEncoder(w).Encode(models.ToPersonResponseList(people))
+	shared.WriteSuccess(w, "Kullanıcılar getirildi", models.ToPersonResponseList(people))
 }
 
 // GetPersonByIDHandler godoc
@@ -102,11 +102,12 @@ func (h *PersonHandler) GetAllPeopleHandler(w http.ResponseWriter, r *http.Reque
 // @Router /get [get]
 func (h *PersonHandler) GetPersonByIDHandler(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.Atoi(r.URL.Query().Get("id"))
-	p, err := h.personRepo.GetPersonByID(r.Context(), id)
-	if shared.HandleError(w, err, http.StatusNotFound, shared.ErrPersonNotFound) {
+	p, err := h.personSvc.GetPersonByID(r.Context(), id)
+	if err != nil {
+		shared.WriteError(w, http.StatusNotFound, shared.ErrPersonNotFound, nil)
 		return
 	}
-	json.NewEncoder(w).Encode(models.ToPersonResponse(p))
+	shared.WriteSuccess(w, "Kullanıcı getirildi", models.ToPersonResponse(p))
 }
 
 // DeletePersonHandler godoc
@@ -117,12 +118,85 @@ func (h *PersonHandler) GetPersonByIDHandler(w http.ResponseWriter, r *http.Requ
 // @Router /delete [get]
 func (h *PersonHandler) DeletePersonHandler(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.Atoi(r.URL.Query().Get("id"))
-	err := h.personRepo.DeletePerson(r.Context(), id)
-	if shared.HandleError(w, err, http.StatusInternalServerError, "Kullanıcı silinemedi") {
+	if shared.HandleError(w, h.personSvc.DeletePerson(r.Context(), id), http.StatusInternalServerError, "Kullanıcı silinemedi") {
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"success": true, "message": "Kullanıcı başarıyla silindi"}`))
+	shared.WriteSuccess(w, "Kullanıcı başarıyla silindi", nil)
+}
+
+// UpdatePersonHandler godoc
+// @Summary Kişi güncelle
+// @Tags people
+// @Security BearerAuth
+// @Accept multipart/form-data
+// @Produce json
+// @Param user_id formData int true "Kullanıcı ID"
+// @Param name formData string false "Ad"
+// @Param surname formData string false "Soyad"
+// @Param email formData string false "Email"
+// @Param age formData int false "Yaş"
+// @Param phone formData string false "Telefon"
+// @Param role formData string false "Rol"
+// @Param password formData string false "Yeni Şifre"
+// @Param photo formData file false "Fotoğraf"
+// @Success 200 {string} string
+// @Failure 400 {string} string
+// @Router /api/update [post]
+func (h *PersonHandler) UpdatePersonHandler(w http.ResponseWriter, r *http.Request) {
+	req, err := parsePersonUpdateForm(r)
+	if err != nil {
+		shared.HandleError(w, err, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := h.personSvc.UpdatePerson(r.Context(), req); err != nil {
+		switch {
+		case errors.Is(err, service.ErrPersonNotFound):
+			shared.WriteError(w, http.StatusNotFound, shared.ErrPersonNotFound, nil)
+		case errors.Is(err, service.ErrEmailTaken):
+			shared.WriteError(w, http.StatusBadRequest, shared.ErrEmailAlreadyExists, nil)
+		case errors.Is(err, service.ErrPasswordHash):
+			shared.WriteError(w, http.StatusInternalServerError, "Şifre işlenirken hata oluştu", err)
+		default:
+			shared.WriteError(w, http.StatusInternalServerError, "Kullanıcı güncellenemedi", err)
+		}
+		return
+	}
+
+	shared.WriteSuccess(w, "Kullanıcı başarıyla güncellendi", nil)
+}
+
+// parsePersonUpdateForm multipart formu okur, fotoğrafı yükler ve UpdatePersonRequest döner.
+func parsePersonUpdateForm(r *http.Request) (service.UpdatePersonRequest, error) {
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		return service.UpdatePersonRequest{}, fmt.Errorf("%s", shared.ErrInvalidRequestBody)
+	}
+
+	userID := parseIntFromForm(r.FormValue("user_id"))
+	if userID == 0 {
+		return service.UpdatePersonRequest{}, fmt.Errorf("geçersiz kullanıcı ID")
+	}
+
+	var newPhotoPath string
+	file, header, err := r.FormFile("photo")
+	if err == nil {
+		newPhotoPath, err = repository.UploadPhoto(file, header)
+		if err != nil {
+			return service.UpdatePersonRequest{}, fmt.Errorf("fotoğraf yüklenemedi")
+		}
+	}
+
+	return service.UpdatePersonRequest{
+		UserID:       userID,
+		Name:         r.FormValue("name"),
+		Surname:      r.FormValue("surname"),
+		Email:        r.FormValue("email"),
+		Age:          parseIntFromForm(r.FormValue("age")),
+		Phone:        r.FormValue("phone"),
+		Role:         r.FormValue("role"),
+		NewPassword:  r.FormValue("password"),
+		NewPhotoPath: newPhotoPath,
+	}, nil
 }
 
 func parseIntFromForm(s string) int {
