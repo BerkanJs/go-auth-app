@@ -6,7 +6,7 @@ Bu doküman, projenin güncel mimarisini, katmanlarını, veri modellerini, akı
 
 ## 1. Genel Bakış
 
-Proje; kullanıcı yönetimi, rol tabanlı erişim kontrolü, JWT kimlik doğrulama ve blog yönetimi sunan tam yığın (full-stack) bir web uygulamasıdır. Backend Go ile yazılmış, frontend ise sunucu taraflı render edilen Bootstrap 5 şablonlarından oluşmaktadır.
+Proje; kullanıcı yönetimi, rol tabanlı erişim kontrolü, JWT kimlik doğrulama ve blog yönetimi sunan bir backend API'dir. Backend Go ile yazılmış olup REST JSON API sunar. Frontend React'e geçiş planlanmaktadır; mevcut Go template/web form katmanı kademeli olarak kaldırılacaktır.
 
 ### Teknoloji Yığını
 
@@ -257,6 +257,10 @@ type BlogService interface {
 }
 
 type PersonService interface {
+    CreatePerson(ctx context.Context, req models.CreatePersonRequest) (models.Person, error)
+    GetAllPeople(ctx context.Context) ([]models.Person, error)
+    GetPersonByID(ctx context.Context, id int) (models.Person, error)
+    DeletePerson(ctx context.Context, id int) error
     UpdatePerson(ctx context.Context, req UpdatePersonRequest) error
 }
 
@@ -310,6 +314,8 @@ func (b *AppBuilder) Build() {
 ### B. Chain of Responsibility Pattern — `handlers/registration_pipeline.go`
 
 Kayıt akışı her biri tek sorumluluk üstlenen handler zinciriyle yürütülür. Herhangi bir adım hata dönerse zincir durur.
+
+> **Not:** Bu pipeline yalnızca `WebHandler.WebRegisterHandler` (web form kayıt) tarafından kullanılır. `PersonHandler.AddPersonHandler` (API endpoint) doğrudan `personSvc.CreatePerson` çağırır; pipeline'ı kullanmaz.
 
 ```
 EmailCheckHandler → PersonBuildHandler → PersonSaveHandler
@@ -423,10 +429,11 @@ authRepo   := repository.NewAuthRepo(db)
 
 authSvc    := service.NewAuthService(authRepo, personRepo, cfg)
 blogSvc    := service.NewBlogService(blogRepo)
+personSvc  := service.NewPersonService(personRepo)
 
 authHandler   := handlers.NewAuthHandler(authSvc)
-blogHandler   := handlers.NewBlogHandler(blogSvc, personRepo) // personRepo: API'de rol için
-personHandler := handlers.NewPersonHandler(personRepo)
+blogHandler   := handlers.NewBlogHandler(blogSvc, personRepo) // personRepo: blog yazar adı için
+personHandler := handlers.NewPersonHandler(personSvc)         // yalnızca service alır, repo almaz
 ```
 
 ---
@@ -452,6 +459,7 @@ personHandler := handlers.NewPersonHandler(personRepo)
 | `GET` | `/api/all` | `GetAllPeopleHandler` | JWT |
 | `GET` | `/api/get?id=` | `GetPersonByIDHandler` | JWT |
 | `GET` | `/api/delete?id=` | `DeletePersonHandler` | JWT |
+| `POST` | `/api/update` | `UpdatePersonHandler` | JWT |
 
 #### Blog (React için)
 
@@ -761,17 +769,72 @@ func main() {
 Tüm SQL sorguları tek dosyada sabit olarak tutulur. Handler veya service içinde ham SQL yoktur.
 
 ```go
+// people tablosu
 const (
-    SelectAllPeople    = `SELECT id, name, surname, email, age, phone, photo_path, role, password_hash FROM people`
-    SelectPersonByID   = `SELECT ... FROM people WHERE id = ?`
-    InsertPerson       = `INSERT INTO people (name, surname, email, age, phone, photo_path, role, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    // ... diğer sorgular
+    InsertPerson        = `INSERT INTO people(name, surname, email, age, phone, photo_path, role, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    SelectAllPeople     = `SELECT id, name, surname, email, age, phone, photo_path, role, password_hash FROM people`
+    SelectPersonByID    = `SELECT ... FROM people WHERE id = ?`
+    SelectPersonByEmail = `SELECT ... FROM people WHERE email = ?`
+    DeletePersonByID    = `DELETE FROM people WHERE id = ?`
+    UpdatePersonQuery   = `UPDATE people SET name = ?, surname = ?, email = ?, age = ?, phone = ?, photo_path = ?, role = ?, password_hash = ? WHERE id = ?`
+)
+
+// blogs tablosu
+const (
+    InsertBlog                    = `INSERT INTO blogs(...) VALUES (...)`
+    SelectAllBlogs                = `SELECT ... FROM blogs ORDER BY created_at DESC`
+    SelectPublishedBlogs          = `SELECT ... FROM blogs WHERE published = 1 ORDER BY created_at DESC`
+    SelectBlogByID                = `SELECT ... FROM blogs WHERE id = ?`
+    SelectBlogsByAuthor           = `SELECT ... FROM blogs WHERE author_id = ? ORDER BY created_at DESC`
+    UpdateBlogQuery               = `UPDATE blogs SET title = ?, content = ?, summary = ?, image_path = ?, published = ?, updated_at = ? WHERE id = ?`
+    UpdateBlogPublishStatusQuery  = `UPDATE blogs SET published = ?, updated_at = ? WHERE id = ?`
+    DeleteBlogByID                = `DELETE FROM blogs WHERE id = ?`
+)
+
+// refresh_tokens tablosu
+const (
+    InsertRefreshToken        = `INSERT INTO refresh_tokens(user_id, token, revoked, created_at) VALUES (?, ?, 0, ?)`
+    SelectRefreshTokenRevoked = `SELECT revoked FROM refresh_tokens WHERE token = ?`
+    RevokeRefreshTokenQuery   = `UPDATE refresh_tokens SET revoked = 1, revoked_at = ? WHERE token = ? AND revoked = 0`
 )
 ```
 
 ---
 
-## 19. Güvenlik Özeti
+## 19. React'e Geçiş Planı
+
+Proje ilerleyen süreçte React tabanlı bir frontend'e geçecektir. Bu süreçte aşağıdaki katmanlar kademeli olarak kaldırılacak, REST API katmanı korunacaktır.
+
+### Kalacaklar (REST API)
+
+| Bileşen | Açıklama |
+|---|---|
+| `/api/*` endpoint'leri | Tüm JSON API route'ları |
+| `handlers/auth_handler.go` | Login, Refresh, Logout, JwtAuthMiddleware |
+| `handlers/person_handler.go` | Kişi CRUD API handler'ları |
+| `handlers/blog_handler.go` → API metodları | `ApiBlogListHandler`, `ApiCreateBlogHandler`, `ApiUpdateBlogHandler`, `ApiDeleteBlogHandler` |
+| `service/`, `repository/`, `models/`, `shared/` | Tüm iş mantığı ve yardımcı katmanlar |
+
+### Kaldırılacaklar (Web/Template Katmanı)
+
+| Bileşen | Açıklama |
+|---|---|
+| `handlers/web_handler.go` | Web form handler'ları (WebLoginHandler, WebRegisterHandler, vb.) |
+| `handlers/page_renderer.go` | Go template render sistemi |
+| `handlers/registration_pipeline.go` | Web kayıt pipeline'ı (API'de `personSvc.CreatePerson` kullanılıyor) |
+| `shared/web_helpers.go` | Cookie/JWT → template data yardımcıları |
+| Web route'ları (`/`, `/login`, `/register`, `/admin`, `/editor`, `/blogs`, vb.) | HTML sayfaları |
+| `static/` (template dosyaları) | Go şablonları; React build çıktısı yerine geçecek |
+
+### Geçiş Sırasında Dikkat Edilecekler
+
+- CORS middleware (`shared/cors.go`) zaten mevcut — React geliştirme ortamı için yapılandırılabilir.
+- JWT access + refresh token akışı React ile doğrudan çalışır; token `localStorage` veya `httpOnly` cookie'de saklanabilir.
+- `/api/update` endpoint'i `multipart/form-data` alır (fotoğraf yükleme için); React'te `FormData` ile çağrılır.
+
+---
+
+## 20. Güvenlik Özeti
 
 | Alan | Önlem |
 |---|---|
