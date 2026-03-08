@@ -425,6 +425,7 @@ authSvc    := service.NewAuthService(authRepo, personRepo, cfg)
 blogSvc    := service.NewBlogService(blogRepo)
 
 authHandler   := handlers.NewAuthHandler(authSvc)
+blogHandler   := handlers.NewBlogHandler(blogSvc, personRepo) // personRepo: API'de rol için
 personHandler := handlers.NewPersonHandler(personRepo)
 ```
 
@@ -434,16 +435,32 @@ personHandler := handlers.NewPersonHandler(personRepo)
 
 ### REST API (JSON)
 
+#### Kimlik Doğrulama
+
 | Method | Path | Handler | Auth |
 |---|---|---|---|
 | `POST` | `/api/login` | `LoginHandler` | — |
 | `POST` | `/api/refresh` | `RefreshHandler` | — |
 | `POST` | `/api/logout` | `LogoutHandler` | JWT |
 | `GET` | `/api/health` | `HealthHandler` | — |
+
+#### Kişi
+
+| Method | Path | Handler | Auth |
+|---|---|---|---|
 | `POST` | `/api/add` | `AddPersonHandler` | — |
 | `GET` | `/api/all` | `GetAllPeopleHandler` | JWT |
 | `GET` | `/api/get?id=` | `GetPersonByIDHandler` | JWT |
 | `GET` | `/api/delete?id=` | `DeletePersonHandler` | JWT |
+
+#### Blog (React için)
+
+| Method | Path | Handler | Auth | Kısıtlama |
+|---|---|---|---|---|
+| `GET` | `/api/blogs` | `ApiBlogListHandler` | JWT | Admin: hepsi, Editor: kendi |
+| `POST` | `/api/blogs/create` | `ApiCreateBlogHandler` | JWT | Editor/Admin |
+| `PUT` | `/api/blogs/update?id=` | `ApiUpdateBlogHandler` | JWT | Sahip veya Admin |
+| `DELETE` | `/api/blogs/delete?id=` | `ApiDeleteBlogHandler` | JWT | Sahip veya Admin |
 
 ### Web UI (Form/HTML)
 

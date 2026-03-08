@@ -81,7 +81,7 @@ func (b *AppBuilder) buildServices(repos appRepos) appServices {
 func (b *AppBuilder) buildHandlers(repos appRepos, svcs appServices) appHandlers {
 	return appHandlers{
 		auth:   handlers.NewAuthHandler(svcs.auth),
-		blog:   handlers.NewBlogHandler(svcs.blog),
+		blog:   handlers.NewBlogHandler(svcs.blog, repos.person),
 		person: handlers.NewPersonHandler(repos.person),
 		web:    handlers.NewWebHandler(svcs.auth, repos.person, repos.blog, svcs.person),
 		roles:  handlers.NewRoleChecker(repos.person),
@@ -116,6 +116,12 @@ func (b *AppBuilder) registerRoutes(h appHandlers) {
 	http.HandleFunc("/api/all", handlers.JwtAuthMiddleware(h.person.GetAllPeopleHandler))
 	http.HandleFunc("/api/get", handlers.JwtAuthMiddleware(h.person.GetPersonByIDHandler))
 	http.HandleFunc("/api/delete", handlers.JwtAuthMiddleware(h.person.DeletePersonHandler))
+
+	// Blog API endpoint'leri (React için)
+	http.HandleFunc("/api/blogs", handlers.JwtAuthMiddleware(h.blog.ApiBlogListHandler))
+	http.HandleFunc("/api/blogs/create", handlers.JwtAuthMiddleware(h.blog.ApiCreateBlogHandler))
+	http.HandleFunc("/api/blogs/update", handlers.JwtAuthMiddleware(h.blog.ApiUpdateBlogHandler))
+	http.HandleFunc("/api/blogs/delete", handlers.JwtAuthMiddleware(h.blog.ApiDeleteBlogHandler))
 
 	// Web arayüzü route'ları
 	http.HandleFunc("/", h.web.HomeHandler)

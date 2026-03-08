@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -14,11 +15,12 @@ import (
 
 // BlogHandler blog CRUD ve görüntüleme endpoint'lerini yönetir.
 type BlogHandler struct {
-	blogSvc service.BlogService
+	blogSvc    service.BlogService
+	personRepo repository.PersonRepository
 }
 
-func NewBlogHandler(blogSvc service.BlogService) *BlogHandler {
-	return &BlogHandler{blogSvc: blogSvc}
+func NewBlogHandler(blogSvc service.BlogService, personRepo repository.PersonRepository) *BlogHandler {
+	return &BlogHandler{blogSvc: blogSvc, personRepo: personRepo}
 }
 
 // blogPageRenderer, Blog Yönetimi sayfası için Template Method implementasyonu.
@@ -217,4 +219,120 @@ func getTokenFromCookie(r *http.Request) string {
 		return ""
 	}
 	return cookie.Value
+}
+
+// --- JSON API endpoint'leri (React için) ---
+
+// ApiBlogListHandler, giriş yapmış kullanıcının görebileceği blogları döner.
+// Admin tüm blogları, editor sadece kendi bloglarını görür.
+func (h *BlogHandler) ApiBlogListHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := ctx.Value(userIDContextKey).(int)
+
+	person, err := h.personRepo.GetPersonByID(ctx, userID)
+	if shared.HandleError(w, err, http.StatusInternalServerError, "Kullanıcı bilgisi alınamadı") {
+		return
+	}
+
+	blogs, err := h.blogSvc.GetBlogsForUser(ctx, person.Role, userID)
+	if shared.HandleError(w, err, http.StatusInternalServerError, "Bloglar getirilemedi") {
+		return
+	}
+
+	shared.WriteSuccess(w, "Bloglar getirildi", models.ToBlogResponseList(blogs))
+}
+
+// ApiCreateBlogHandler, yeni blog oluşturur.
+func (h *BlogHandler) ApiCreateBlogHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := ctx.Value(userIDContextKey).(int)
+
+	person, err := h.personRepo.GetPersonByID(ctx, userID)
+	if shared.HandleError(w, err, http.StatusInternalServerError, "Kullanıcı bilgisi alınamadı") {
+		return
+	}
+
+	var req models.CreateBlogRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		shared.HandleCustomError(w, shared.NewValidationError("Geçersiz istek formatı", nil))
+		return
+	}
+
+	authorName := person.Name + " " + person.Surname
+	id, err := h.blogSvc.CreateBlog(ctx, req.Title, req.Content, req.Summary, req.ImagePath, req.Published, userID, authorName)
+	if shared.HandleError(w, err, http.StatusInternalServerError, "Blog oluşturulamadı") {
+		return
+	}
+
+	shared.WriteSuccess(w, "Blog oluşturuldu", map[string]interface{}{"id": id})
+}
+
+// ApiUpdateBlogHandler, mevcut blogu günceller. ?id= query parametresi gereklidir.
+func (h *BlogHandler) ApiUpdateBlogHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := ctx.Value(userIDContextKey).(int)
+
+	blogID, err := strconv.Atoi(r.URL.Query().Get("id"))
+	if err != nil {
+		shared.HandleCustomError(w, shared.NewValidationError("Geçersiz blog ID", nil))
+		return
+	}
+
+	person, err := h.personRepo.GetPersonByID(ctx, userID)
+	if shared.HandleError(w, err, http.StatusInternalServerError, "Kullanıcı bilgisi alınamadı") {
+		return
+	}
+
+	var req models.UpdateBlogRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		shared.HandleCustomError(w, shared.NewValidationError("Geçersiz istek formatı", nil))
+		return
+	}
+
+	err = h.blogSvc.UpdateBlog(ctx, blogID, req.Title, req.Content, req.Summary, req.ImagePath, req.Published, person.Role, userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrBlogNotFound):
+			shared.HandleCustomError(w, shared.NewNotFoundError("Blog bulunamadı"))
+		case errors.Is(err, service.ErrPermissionDenied):
+			shared.HandleCustomError(w, shared.NewPermissionError("Bu blogu düzenleme yetkiniz yok"))
+		default:
+			shared.HandleError(w, err, http.StatusInternalServerError, "Blog güncellenemedi")
+		}
+		return
+	}
+
+	shared.WriteSuccess(w, "Blog güncellendi", nil)
+}
+
+// ApiDeleteBlogHandler, blogu siler. ?id= query parametresi gereklidir.
+func (h *BlogHandler) ApiDeleteBlogHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := ctx.Value(userIDContextKey).(int)
+
+	blogID, err := strconv.Atoi(r.URL.Query().Get("id"))
+	if err != nil {
+		shared.HandleCustomError(w, shared.NewValidationError("Geçersiz blog ID", nil))
+		return
+	}
+
+	person, err := h.personRepo.GetPersonByID(ctx, userID)
+	if shared.HandleError(w, err, http.StatusInternalServerError, "Kullanıcı bilgisi alınamadı") {
+		return
+	}
+
+	err = h.blogSvc.DeleteBlog(ctx, blogID, person.Role, userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrBlogNotFound):
+			shared.HandleCustomError(w, shared.NewNotFoundError("Blog bulunamadı"))
+		case errors.Is(err, service.ErrPermissionDenied):
+			shared.HandleCustomError(w, shared.NewPermissionError("Bu blogu silme yetkiniz yok"))
+		default:
+			shared.HandleError(w, err, http.StatusInternalServerError, "Blog silinemedi")
+		}
+		return
+	}
+
+	shared.WriteSuccess(w, "Blog silindi", nil)
 }

@@ -70,3 +70,13 @@
 [2026-03-08 12:35:19] HTTP_ERROR: Authorization header gerekli - map[error:<nil> status:401]
 [2026-03-08 12:35:19] AUTH: LOGIN_SUCCESS - User: ali@example.com - map[action:LOGIN_SUCCESS details:User logged in successfully user_id:ali@example.com]
 [2026-03-08 12:35:19] SUCCESS: Giriş başarılı - {AccessToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjUsImV4cCI6MTc3Mjk2MzQxOSwiaWF0IjoxNzcyOTYyNTE5fQ.sxiq0yCbWcZyVJxN0omc5DK5KFy9QKJGpF8Pggvu2MI RefreshToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjUsImV4cCI6MTc3MzU2NzMxOSwiaWF0IjoxNzcyOTYyNTE5fQ.ZNymoX7AHFeuTdsva6WSHN5hDfCeO1nBcKczc6SyRKk}
+[2026-03-08 12:52:46] HTTP_ERROR: Bu email ile kayıt zaten mevcut - map[error:<nil> status:400]
+[2026-03-08 12:52:46] AUTH: LOGIN_SUCCESS - User: ali@example.com - map[action:LOGIN_SUCCESS details:User logged in successfully user_id:ali@example.com]
+[2026-03-08 12:52:46] SUCCESS: Giriş başarılı - {AccessToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsImV4cCI6MTc3Mjk2NDQ2NiwiaWF0IjoxNzcyOTYzNTY2fQ.T-zGK-LPZDflnYWGnVX_CmLJw7VurkGXrdeewLviypA RefreshToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsImV4cCI6MTc3MzU2ODM2NiwiaWF0IjoxNzcyOTYzNTY2fQ.de_AAquYRBgZtXJ1V0a31EwPVngyzhiVGrrUHcuKmLs}
+[2026-03-08 12:52:46] AUTH: LOGIN_FAILED - User: ali@example.com - map[action:LOGIN_FAILED details:Invalid credentials user_id:ali@example.com]
+[2026-03-08 12:52:46] CUSTOM_ERROR: Kullanıcı veya şifre hatalı - map[code:401 details:map[] type:auth]
+[2026-03-08 12:52:46] AUTH: LOGIN_FAILED - User: yok@example.com - map[action:LOGIN_FAILED details:Invalid credentials user_id:yok@example.com]
+[2026-03-08 12:52:46] CUSTOM_ERROR: Kullanıcı veya şifre hatalı - map[code:401 details:map[] type:auth]
+[2026-03-08 12:52:46] HTTP_ERROR: Authorization header gerekli - map[error:<nil> status:401]
+[2026-03-08 12:52:47] AUTH: LOGIN_SUCCESS - User: ali@example.com - map[action:LOGIN_SUCCESS details:User logged in successfully user_id:ali@example.com]
+[2026-03-08 12:52:47] SUCCESS: Giriş başarılı - {AccessToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjUsImV4cCI6MTc3Mjk2NDQ2NywiaWF0IjoxNzcyOTYzNTY3fQ.T2eYz3BKmiVhC0IqDBnlXA9SpbEOuc9ztrN1N-SmTyg RefreshToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjUsImV4cCI6MTc3MzU2ODM2NywiaWF0IjoxNzcyOTYzNTY3fQ.leqb2EKhWBLOs5IsUI3ro2_nNuiyfgr5mODBXtv57Zo}
