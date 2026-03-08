@@ -30,6 +30,11 @@ WHERE email = ?`
 	DeletePersonByID = `
 DELETE FROM people
 WHERE id = ?`
+
+	UpdatePersonQuery = `
+UPDATE people
+SET name = ?, surname = ?, email = ?, age = ?, phone = ?, photo_path = ?, role = ?, password_hash = ?
+WHERE id = ?`
 )
 
 // Blogs tablosu ile ilgili sorgular.

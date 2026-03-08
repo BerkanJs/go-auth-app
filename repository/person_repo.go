@@ -86,11 +86,8 @@ func (r *SQLitePersonRepo) DeletePerson(ctx context.Context, id int) error {
 }
 
 func (r *SQLitePersonRepo) UpdatePerson(ctx context.Context, p models.Person) error {
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE people
-		SET name = ?, surname = ?, email = ?, age = ?, phone = ?, photo_path = ?, role = ?, password_hash = ?
-		WHERE id = ?
-	`, p.Name, p.Surname, p.Email, p.Age, p.Phone, p.PhotoPath, p.Role, p.PasswordHash, p.ID)
+	_, err := r.db.ExecContext(ctx, queries.UpdatePersonQuery,
+		p.Name, p.Surname, p.Email, p.Age, p.Phone, p.PhotoPath, p.Role, p.PasswordHash, p.ID)
 	return err
 }
 

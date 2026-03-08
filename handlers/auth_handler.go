@@ -132,7 +132,7 @@ func (h *AuthHandler) RefreshHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(models.TokenResponse{
+	shared.WriteSuccess(w, "Token yenilendi", models.TokenResponse{
 		AccessToken:  accessToken,
 		RefreshToken: req.RefreshToken,
 	})
@@ -162,10 +162,9 @@ func (h *AuthHandler) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.authSvc.RevokeRefreshToken(r.Context(), req.RefreshToken); err != nil {
-		shared.WriteError(w, http.StatusInternalServerError, shared.ErrInvalidRefreshToken, err)
+		shared.WriteError(w, http.StatusInternalServerError, "Çıkış yapılırken bir hata oluştu", err)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("Logout başarılı"))
+	shared.WriteSuccess(w, "Çıkış başarılı", nil)
 }
