@@ -10,36 +10,41 @@ import (
 )
 
 var (
-	ErrPersonNotFound   = errors.New("kullanıcı bulunamadı")
-	ErrEmailTaken       = errors.New("bu email zaten kayıtlı")
-	ErrPasswordHash     = errors.New("şifre işlenirken hata oluştu")
-	ErrPhotoUpload      = errors.New("fotoğraf yüklenemedi")
+	ErrPersonNotFound = errors.New("kullanıcı bulunamadı")
+	ErrEmailTaken     = errors.New("bu email zaten kayıtlı")
+	ErrPasswordHash   = errors.New("şifre işlenirken hata oluştu")
+	ErrPhotoUpload    = errors.New("fotoğraf yüklenemedi")
 )
 
 // UpdatePersonRequest güncelleme için gerekli alanları taşır.
 type UpdatePersonRequest struct {
-	UserID      int
-	Name        string
-	Surname     string
-	Email       string
-	Age         int
-	Phone       string
-	Role        string
-	NewPassword string    // boşsa mevcut şifre korunur
-	NewPhotoPath string   // boşsa mevcut fotoğraf korunur
+	UserID       int
+	Name         string
+	Surname      string
+	Email        string
+	Age          int
+	Phone        string
+	Role         string
+	NewPassword  string
+	NewPhotoPath string
 }
 
-// UpdatePerson kullanıcı bilgilerini günceller.
-// Email değişiyorsa benzersizlik kontrolü yapar.
-// Şifre ve fotoğraf değişmemişse mevcut değerler korunur.
-func UpdatePerson(req UpdatePersonRequest) error {
-	existing, err := repository.GetPersonByID(req.UserID)
+type personService struct {
+	repo repository.PersonRepository
+}
+
+func NewPersonService(repo repository.PersonRepository) PersonService {
+	return &personService{repo: repo}
+}
+
+func (s *personService) UpdatePerson(req UpdatePersonRequest) error {
+	existing, err := s.repo.GetPersonByID(req.UserID)
 	if err != nil {
 		return ErrPersonNotFound
 	}
 
 	if req.Email != existing.Email {
-		exists, err := repository.EmailExists(req.Email)
+		exists, err := s.repo.EmailExists(req.Email)
 		if err != nil {
 			return err
 		}
@@ -50,7 +55,6 @@ func UpdatePerson(req UpdatePersonRequest) error {
 
 	photoPath := existing.PhotoPath
 	if req.NewPhotoPath != "" {
-		// Yeni fotoğraf yüklendiğinde eski fotoğrafı diskten sil
 		repository.DeleteUploadedFile(existing.PhotoPath)
 		photoPath = req.NewPhotoPath
 	}
@@ -75,6 +79,5 @@ func UpdatePerson(req UpdatePersonRequest) error {
 		PhotoPath:    photoPath,
 		PasswordHash: passwordHash,
 	}
-
-	return repository.UpdatePerson(updated)
+	return s.repo.UpdatePerson(updated)
 }

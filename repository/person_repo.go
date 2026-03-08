@@ -15,7 +15,14 @@ import (
 	"go-kisi-api/queries"
 )
 
-func AddPerson(p models.Person) (int64, error) {
+// SQLitePersonRepo, PersonRepository'yi SQLite üzerinde implement eder.
+type SQLitePersonRepo struct{}
+
+func NewPersonRepo() PersonRepository {
+	return &SQLitePersonRepo{}
+}
+
+func (r *SQLitePersonRepo) AddPerson(p models.Person) (int64, error) {
 	result, err := db.DB.Exec(
 		queries.InsertPerson,
 		p.Name, p.Surname, p.Email, p.Age, p.Phone, p.PhotoPath, p.Role, p.PasswordHash,
@@ -26,13 +33,12 @@ func AddPerson(p models.Person) (int64, error) {
 	return result.LastInsertId()
 }
 
-func GetAllPeople() ([]models.Person, error) {
+func (r *SQLitePersonRepo) GetAllPeople() ([]models.Person, error) {
 	rows, err := db.DB.Query(queries.SelectAllPeople)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var people []models.Person
 	for rows.Next() {
 		var p models.Person
@@ -44,22 +50,21 @@ func GetAllPeople() ([]models.Person, error) {
 	return people, nil
 }
 
-func GetPersonByID(id int) (models.Person, error) {
+func (r *SQLitePersonRepo) GetPersonByID(id int) (models.Person, error) {
 	var p models.Person
 	row := db.DB.QueryRow(queries.SelectPersonByID, id)
 	err := row.Scan(&p.ID, &p.Name, &p.Surname, &p.Email, &p.Age, &p.Phone, &p.PhotoPath, &p.Role, &p.PasswordHash)
 	return p, err
 }
 
-func GetPersonByEmail(email string) (models.Person, error) {
+func (r *SQLitePersonRepo) GetPersonByEmail(email string) (models.Person, error) {
 	var p models.Person
 	row := db.DB.QueryRow(queries.SelectPersonByEmail, email)
 	err := row.Scan(&p.ID, &p.Name, &p.Surname, &p.Email, &p.Age, &p.Phone, &p.PhotoPath, &p.Role, &p.PasswordHash)
 	return p, err
 }
 
-// EmailExists verilen email için bir kayıt olup olmadığını döner.
-func EmailExists(email string) (bool, error) {
+func (r *SQLitePersonRepo) EmailExists(email string) (bool, error) {
 	var id int
 	err := db.DB.QueryRow(queries.SelectPersonIDByEmail, email).Scan(&id)
 	if err == sql.ErrNoRows {
@@ -71,13 +76,12 @@ func EmailExists(email string) (bool, error) {
 	return true, nil
 }
 
-func DeletePerson(id int) error {
+func (r *SQLitePersonRepo) DeletePerson(id int) error {
 	_, err := db.DB.Exec(queries.DeletePersonByID, id)
 	return err
 }
 
-// UpdatePerson kişiyi günceller
-func UpdatePerson(p models.Person) error {
+func (r *SQLitePersonRepo) UpdatePerson(p models.Person) error {
 	_, err := db.DB.Exec(`
 		UPDATE people
 		SET name = ?, surname = ?, email = ?, age = ?, phone = ?, photo_path = ?, role = ?, password_hash = ?
@@ -86,28 +90,37 @@ func UpdatePerson(p models.Person) error {
 	return err
 }
 
-// DeleteUploadedFile URL yoluyla belirtilen yüklenmiş dosyayı diskten siler.
-// Dosya bulunamazsa ya da boş path verilirse sessizce devam eder.
+// defaultPersonRepo, geriye dönük uyumluluk için kullanılan paket düzeyindeki örnek.
+var defaultPersonRepo PersonRepository = &SQLitePersonRepo{}
+
+// Paket düzeyinde wrapper fonksiyonlar — shared ve diğer paketler bunları kullanmaya devam eder.
+func AddPerson(p models.Person) (int64, error)              { return defaultPersonRepo.AddPerson(p) }
+func GetAllPeople() ([]models.Person, error)               { return defaultPersonRepo.GetAllPeople() }
+func GetPersonByID(id int) (models.Person, error)          { return defaultPersonRepo.GetPersonByID(id) }
+func GetPersonByEmail(email string) (models.Person, error) { return defaultPersonRepo.GetPersonByEmail(email) }
+func EmailExists(email string) (bool, error)               { return defaultPersonRepo.EmailExists(email) }
+func DeletePerson(id int) error                            { return defaultPersonRepo.DeletePerson(id) }
+func UpdatePerson(p models.Person) error                   { return defaultPersonRepo.UpdatePerson(p) }
+
+// DeleteUploadedFile ve UploadPhoto dosya sistemi operasyonlarıdır; DB ile ilgisi yoktur.
+// PersonRepository interface'ine dahil edilmezler, serbest fonksiyon olarak kalırlar.
+
 func DeleteUploadedFile(urlPath string) {
 	if urlPath == "" {
 		return
 	}
-	// URL yolu "/uploads/..." formatında, dosya sistemi yolu "uploads/..." formatında
 	fsPath := strings.TrimPrefix(urlPath, "/")
 	os.Remove(fsPath)
 }
 
-// UploadPhoto yüklenen fotoğrafı kaydeder ve dosya yolunu döner
 func UploadPhoto(file multipart.File, header *multipart.FileHeader) (string, error) {
 	defer file.Close()
 
-	// Dosya uzantısını al
 	ext := filepath.Ext(header.Filename)
 	if ext == "" {
 		return "", fmt.Errorf("dosya uzantısı bulunamadı")
 	}
 
-	// Sadece resim dosyalarına izin ver
 	allowedExts := map[string]bool{
 		".jpg":  true,
 		".jpeg": true,
@@ -119,21 +132,16 @@ func UploadPhoto(file multipart.File, header *multipart.FileHeader) (string, err
 		return "", fmt.Errorf("sadece resim dosyalarına izin veriliyor")
 	}
 
-	// Rastgele dosya adı oluştur
 	randomBytes := make([]byte, 16)
 	rand.Read(randomBytes)
 	fileName := fmt.Sprintf("%x%s", randomBytes, ext)
 
-	// Uploads klasörünü kontrol et ve oluştur
 	uploadDir := "uploads"
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		os.MkdirAll(uploadDir, 0755)
 	}
 
-	// Dosya yolunu oluştur
 	filePath := filepath.Join(uploadDir, fileName)
-
-	// Dosyayı kaydet
 	dst, err := os.Create(filePath)
 	if err != nil {
 		return "", err

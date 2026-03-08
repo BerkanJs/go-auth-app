@@ -17,6 +17,7 @@ import (
 	"net/http"
 
 	_ "go-kisi-api/docs"
+	_ "net/http/pprof"
 )
 
 func main() {

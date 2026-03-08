@@ -5,41 +5,35 @@ import (
 
 	"go-kisi-api/models"
 	"go-kisi-api/repository"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
-// registrationContext kayıt akışı boyunca taşınan veriyi tutar.
 type registrationContext struct {
 	Req    models.CreatePersonRequest
 	Person models.Person
 }
 
-// registrationStep zincirdeki her adımın imzası.
-type registrationStep func(*registrationContext) error
+type registrationStep func(*registrationContext, repository.PersonRepository) error
 
-// Domain seviyesinde özel hatalar.
-var (
-	errEmailAlreadyExists = errors.New("email already exists")
-)
+var errEmailAlreadyExists = errors.New("email already exists")
 
-// runRegistrationPipeline kayıt akışını adım adım çalıştırır.
-func runRegistrationPipeline(ctx *registrationContext) error {
+func runRegistrationPipeline(ctx *registrationContext, repo repository.PersonRepository) error {
 	steps := []registrationStep{
 		ensureEmailNotExistsStep,
 		buildPersonStep,
 		savePersonStep,
 	}
-
 	for _, step := range steps {
-		if err := step(ctx); err != nil {
+		if err := step(ctx, repo); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// ensureEmailNotExistsStep email'in benzersiz olmasını garanti eder.
-func ensureEmailNotExistsStep(ctx *registrationContext) error {
-	exists, err := repository.EmailExists(ctx.Req.Email)
+func ensureEmailNotExistsStep(ctx *registrationContext, repo repository.PersonRepository) error {
+	exists, err := repo.EmailExists(ctx.Req.Email)
 	if err != nil {
 		return err
 	}
@@ -49,8 +43,7 @@ func ensureEmailNotExistsStep(ctx *registrationContext) error {
 	return nil
 }
 
-// buildPersonStep, CreatePersonRequest'ten Person entity'si üretir.
-func buildPersonStep(ctx *registrationContext) error {
+func buildPersonStep(ctx *registrationContext, repo repository.PersonRepository) error {
 	person, err := buildPersonFromCreateRequest(ctx.Req)
 	if err != nil {
 		return err
@@ -59,9 +52,8 @@ func buildPersonStep(ctx *registrationContext) error {
 	return nil
 }
 
-// savePersonStep, kişiyi veritabanına kaydeder ve ID'yi context'e yazar.
-func savePersonStep(ctx *registrationContext) error {
-	id, err := repository.AddPerson(ctx.Person)
+func savePersonStep(ctx *registrationContext, repo repository.PersonRepository) error {
+	id, err := repo.AddPerson(ctx.Person)
 	if err != nil {
 		return err
 	}
@@ -69,3 +61,19 @@ func savePersonStep(ctx *registrationContext) error {
 	return nil
 }
 
+func buildPersonFromCreateRequest(req models.CreatePersonRequest) (models.Person, error) {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return models.Person{}, err
+	}
+	return models.Person{
+		Name:         req.Name,
+		Surname:      req.Surname,
+		Email:        req.Email,
+		Age:          req.Age,
+		Phone:        req.Phone,
+		PhotoPath:    req.PhotoPath,
+		Role:         req.Role,
+		PasswordHash: string(hashed),
+	}, nil
+}

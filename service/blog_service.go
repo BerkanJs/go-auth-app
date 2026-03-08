@@ -13,17 +13,22 @@ var (
 	ErrPermissionDenied = errors.New("bu işlem için yetkiniz yok")
 )
 
-// GetBlogsForUser role göre blogları getirir.
-// Admin tüm blogları, editor yalnızca kendi bloglarını görür.
-func GetBlogsForUser(userRole string, userID int) ([]models.Blog, error) {
-	if userRole == "admin" {
-		return repository.GetAllBlogs()
-	}
-	return repository.GetBlogsByAuthor(userID)
+type blogService struct {
+	repo repository.BlogRepository
 }
 
-// CreateBlog yeni blog oluşturur ve ID'yi döner.
-func CreateBlog(title, content, summary, imagePath string, published bool, authorID int, authorName string) (int64, error) {
+func NewBlogService(repo repository.BlogRepository) BlogService {
+	return &blogService{repo: repo}
+}
+
+func (s *blogService) GetBlogsForUser(userRole string, userID int) ([]models.Blog, error) {
+	if userRole == "admin" {
+		return s.repo.GetAllBlogs()
+	}
+	return s.repo.GetBlogsByAuthor(userID)
+}
+
+func (s *blogService) CreateBlog(title, content, summary, imagePath string, published bool, authorID int, authorName string) (int64, error) {
 	blog := models.Blog{
 		Title:      title,
 		Content:    content,
@@ -35,13 +40,11 @@ func CreateBlog(title, content, summary, imagePath string, published bool, autho
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
-	return repository.CreateBlog(blog)
+	return s.repo.CreateBlog(blog)
 }
 
-// UpdateBlog blogu günceller; yetki kontrolü de yapar.
-// imagePath boş gelirse mevcut görsel korunur.
-func UpdateBlog(blogID int, title, content, summary, imagePath string, published bool, userRole string, userID int) error {
-	existing, err := repository.GetBlogByID(blogID)
+func (s *blogService) UpdateBlog(blogID int, title, content, summary, imagePath string, published bool, userRole string, userID int) error {
+	existing, err := s.repo.GetBlogByID(blogID)
 	if err != nil {
 		return ErrBlogNotFound
 	}
@@ -53,7 +56,6 @@ func UpdateBlog(blogID int, title, content, summary, imagePath string, published
 	if imagePath == "" {
 		imagePath = existing.ImagePath
 	} else {
-		// Yeni görsel yüklendiğinde eski görseli diskten sil
 		repository.DeleteUploadedFile(existing.ImagePath)
 	}
 
@@ -69,12 +71,11 @@ func UpdateBlog(blogID int, title, content, summary, imagePath string, published
 		CreatedAt:  existing.CreatedAt,
 		UpdatedAt:  time.Now(),
 	}
-	return repository.UpdateBlog(updated)
+	return s.repo.UpdateBlog(updated)
 }
 
-// DeleteBlog blogu siler; yetki kontrolü de yapar.
-func DeleteBlog(blogID int, userRole string, userID int) error {
-	blog, err := repository.GetBlogByID(blogID)
+func (s *blogService) DeleteBlog(blogID int, userRole string, userID int) error {
+	blog, err := s.repo.GetBlogByID(blogID)
 	if err != nil {
 		return ErrBlogNotFound
 	}
@@ -83,5 +84,5 @@ func DeleteBlog(blogID int, userRole string, userID int) error {
 		return ErrPermissionDenied
 	}
 
-	return repository.DeleteBlog(blogID)
+	return s.repo.DeleteBlog(blogID)
 }

@@ -7,8 +7,14 @@ import (
 	"go-kisi-api/queries"
 )
 
-// SaveRefreshToken verilen kullanıcı için üretilen refresh token'ı saklar.
-func SaveRefreshToken(userID int, token string) error {
+// SQLiteAuthRepo, AuthRepository'yi SQLite üzerinde implement eder.
+type SQLiteAuthRepo struct{}
+
+func NewAuthRepo() AuthRepository {
+	return &SQLiteAuthRepo{}
+}
+
+func (r *SQLiteAuthRepo) SaveRefreshToken(userID int, token string) error {
 	_, err := db.DB.Exec(
 		queries.InsertRefreshToken,
 		userID,
@@ -18,19 +24,16 @@ func SaveRefreshToken(userID int, token string) error {
 	return err
 }
 
-// IsRefreshTokenValid refresh token'ın veritabanında var ve revoke edilmemiş olduğunu kontrol eder.
-func IsRefreshTokenValid(token string) (bool, error) {
+func (r *SQLiteAuthRepo) IsRefreshTokenValid(token string) (bool, error) {
 	var revoked int
 	err := db.DB.QueryRow(queries.SelectRefreshTokenRevoked, token).Scan(&revoked)
 	if err != nil {
-		// satır yoksa veya başka bir hata varsa, token geçersiz sayılır
 		return false, nil
 	}
 	return revoked == 0, nil
 }
 
-// RevokeRefreshToken verilen refresh token'ı revoke eder.
-func RevokeRefreshToken(token string) error {
+func (r *SQLiteAuthRepo) RevokeRefreshToken(token string) error {
 	_, err := db.DB.Exec(
 		queries.RevokeRefreshTokenQuery,
 		time.Now().UTC().Format(time.RFC3339),
@@ -39,3 +42,18 @@ func RevokeRefreshToken(token string) error {
 	return err
 }
 
+// defaultAuthRepo, geriye dönük uyumluluk için kullanılan paket düzeyindeki örnek.
+var defaultAuthRepo AuthRepository = &SQLiteAuthRepo{}
+
+// Paket düzeyinde wrapper fonksiyonlar — shared ve diğer paketler bunları kullanmaya devam eder.
+func SaveRefreshToken(userID int, token string) error {
+	return defaultAuthRepo.SaveRefreshToken(userID, token)
+}
+
+func IsRefreshTokenValid(token string) (bool, error) {
+	return defaultAuthRepo.IsRefreshTokenValid(token)
+}
+
+func RevokeRefreshToken(token string) error {
+	return defaultAuthRepo.RevokeRefreshToken(token)
+}

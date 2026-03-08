@@ -16,6 +16,8 @@
                     <span class="navbar-text me-3">Hoş geldin, {{.UserName}}!</span>
                     {{if eq .UserRole "admin"}}
                         <a class="nav-link" href="/admin">Admin Panel</a>
+                        <a class="nav-link" href="/swagger/index.html" target="_blank">Swagger</a>
+                        <a class="nav-link" href="/debug/pprof/" target="_blank">pprof</a>
                     {{else if eq .UserRole "editor"}}
                         <a class="nav-link" href="/editor">Editor Panel</a>
                     {{end}}
