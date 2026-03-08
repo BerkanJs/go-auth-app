@@ -14,11 +14,19 @@ var (
 )
 
 type blogService struct {
-	repo repository.BlogRepository
+	repo  repository.BlogRepository
+	authz AuthorizationStrategy // Strategy: yetki kontrolü dışarıdan enjekte edilir
 }
 
+// NewBlogService, varsayılan olarak OwnerOrAdminStrategy kullanarak blogService oluşturur.
 func NewBlogService(repo repository.BlogRepository) BlogService {
-	return &blogService{repo: repo}
+	return &blogService{repo: repo, authz: &OwnerOrAdminStrategy{}}
+}
+
+// NewBlogServiceWithStrategy, özel bir yetki stratejisiyle blogService oluşturur.
+// Test veya farklı iş kuralları için kullanılır.
+func NewBlogServiceWithStrategy(repo repository.BlogRepository, authz AuthorizationStrategy) BlogService {
+	return &blogService{repo: repo, authz: authz}
 }
 
 func (s *blogService) GetBlogsForUser(userRole string, userID int) ([]models.Blog, error) {
@@ -49,7 +57,8 @@ func (s *blogService) UpdateBlog(blogID int, title, content, summary, imagePath 
 		return ErrBlogNotFound
 	}
 
-	if userRole != "admin" && existing.AuthorID != userID {
+	// Strategy Pattern: yetki kontrolü stratejiye devredilir, if/else zinciri kalktı
+	if !s.authz.IsAuthorized(userRole, userID, existing.AuthorID) {
 		return ErrPermissionDenied
 	}
 
@@ -80,7 +89,8 @@ func (s *blogService) DeleteBlog(blogID int, userRole string, userID int) error 
 		return ErrBlogNotFound
 	}
 
-	if userRole != "admin" && blog.AuthorID != userID {
+	// Strategy Pattern: UpdateBlog ile aynı strateji, tutarlı yetki kontrolü
+	if !s.authz.IsAuthorized(userRole, userID, blog.AuthorID) {
 		return ErrPermissionDenied
 	}
 

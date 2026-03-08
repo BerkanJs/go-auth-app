@@ -20,50 +20,48 @@ func NewBlogHandler(blogSvc service.BlogService) *BlogHandler {
 	return &BlogHandler{blogSvc: blogSvc}
 }
 
-func (h *BlogHandler) BlogPageHandler(w http.ResponseWriter, r *http.Request) {
-	data := shared.GetTemplateData(r)
-	if !data.IsAuthenticated {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	data.Title = "Blog Yönetimi"
-	claims, err := shared.ParseAccessToken(getTokenFromCookie(r))
+// blogPageRenderer, Blog Yönetimi sayfası için Template Method implementasyonu.
+type blogPageRenderer struct {
+	blogSvc service.BlogService
+}
+
+func (p *blogPageRenderer) RequiresAuth() bool  { return true }
+func (p *blogPageRenderer) Title() string        { return "Blog Yönetimi" }
+func (p *blogPageRenderer) TemplateName() string { return "blog.html" }
+func (p *blogPageRenderer) LoadData(data *shared.TemplateData, userID int) error {
+	blogs, err := p.blogSvc.GetBlogsForUser(data.UserRole, userID)
 	if err != nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	blogs, err := h.blogSvc.GetBlogsForUser(data.UserRole, claims.UserID)
-	if err != nil {
-		shared.LogError("BLOG_PAGE_ERROR", "Failed to load blogs", map[string]interface{}{"error": err.Error(), "user_role": data.UserRole})
-		data.ErrorMessage = "Blog'lar yüklenirken bir hata oluştu."
-		renderTemplate(w, "blog.html", data)
-		return
+		shared.LogError("BLOG_PAGE_ERROR", "Failed to load blogs", map[string]interface{}{"error": err.Error()})
+		return err
 	}
 	data.Blogs = models.ToBlogResponseList(blogs)
-	renderTemplate(w, "blog.html", data)
+	return nil
+}
+
+func (h *BlogHandler) BlogPageHandler(w http.ResponseWriter, r *http.Request) {
+	RenderPage(w, r, &blogPageRenderer{blogSvc: h.blogSvc})
+}
+
+// editorPageRenderer, Editor Panel sayfası için Template Method implementasyonu.
+type editorPageRenderer struct {
+	blogSvc service.BlogService
+}
+
+func (p *editorPageRenderer) RequiresAuth() bool  { return true }
+func (p *editorPageRenderer) Title() string        { return "Editor Panel" }
+func (p *editorPageRenderer) TemplateName() string { return "editor.html" }
+func (p *editorPageRenderer) LoadData(data *shared.TemplateData, userID int) error {
+	blogs, err := p.blogSvc.GetBlogsForUser(data.UserRole, userID)
+	if err != nil {
+		shared.LogError("EDITOR_PAGE_ERROR", "Failed to load blogs", map[string]interface{}{"error": err.Error()})
+		return err
+	}
+	data.Blogs = models.ToBlogResponseList(blogs)
+	return nil
 }
 
 func (h *BlogHandler) EditorPageHandler(w http.ResponseWriter, r *http.Request) {
-	data := shared.GetTemplateData(r)
-	if !data.IsAuthenticated {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	data.Title = "Editor Panel"
-	claims, err := shared.ParseAccessToken(getTokenFromCookie(r))
-	if err != nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	blogs, err := h.blogSvc.GetBlogsForUser(data.UserRole, claims.UserID)
-	if err != nil {
-		shared.LogError("EDITOR_PAGE_ERROR", "Failed to load blogs", map[string]interface{}{"error": err.Error(), "user_id": claims.UserID})
-		data.ErrorMessage = "Blog'lar yüklenirken bir hata oluştu."
-		renderTemplate(w, "editor.html", data)
-		return
-	}
-	data.Blogs = models.ToBlogResponseList(blogs)
-	renderTemplate(w, "editor.html", data)
+	RenderPage(w, r, &editorPageRenderer{blogSvc: h.blogSvc})
 }
 
 func (h *BlogHandler) CreateBlogHandler(w http.ResponseWriter, r *http.Request) {

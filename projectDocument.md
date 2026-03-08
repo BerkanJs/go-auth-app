@@ -33,27 +33,29 @@ Uygulama **`:8081`** portunda çalışır.
 go-auth-app/
 ├── main.go                          # Giriş noktası, global middleware zinciri
 ├── routes/
-│   └── routes.go                    # Repo/service/handler oluşturulur ve wire edilir
+│   ├── routes.go                    # RegisterRoutes — AppBuilder'a delege eder
+│   └── app_builder.go               # Builder Pattern: repo→service→handler→route inşası
 ├── handlers/
 │   ├── auth_handler.go              # AuthHandler struct: Login, Refresh, Logout, JwtAuthMiddleware
 │   ├── person_handler.go            # PersonHandler struct: kişi CRUD API endpoint'leri
-│   ├── web_handler.go               # WebHandler struct: Home, Login, Register, Admin, Update, Delete + renderTemplate
-│   ├── blog_handler.go              # BlogHandler struct: Blog/Editor sayfası + CRUD
-│   ├── editor_handler.go            # (stub — EditorPageHandler BlogHandler'a taşındı)
-│   ├── user_update_handler.go       # (stub — UpdateUserHandler WebHandler'a taşındı)
-│   ├── registration_pipeline.go     # Kayıt akışı pipeline (Chain of Responsibility)
-│   ├── role_middleware.go           # Rol tabanlı erişim middleware'leri
+│   ├── web_handler.go               # WebHandler struct: Login, Register, Update, Delete + PageRenderer'lar
+│   ├── blog_handler.go              # BlogHandler struct: Blog/Editor sayfası + CRUD + PageRenderer'lar
+│   ├── page_renderer.go             # Template Method Pattern: RenderPage iskeleti + PageRenderer arayüzü
+│   ├── registration_pipeline.go     # Chain of Responsibility: EmailCheck→PersonBuild→PersonSave
+│   ├── role_middleware.go           # RoleChecker struct (inject edilmiş PersonRepository)
 │   └── health_handler.go            # Sağlık kontrolü endpoint'i
 ├── service/
 │   ├── interfaces.go                # AuthService, BlogService, PersonService interface'leri
 │   ├── auth_service.go              # authService: Login, token üretimi/doğrulaması
-│   ├── blog_service.go              # blogService: blog CRUD + yetki kontrolü
-│   └── person_service.go            # personService: kullanıcı güncelleme iş mantığı
+│   ├── blog_service.go              # blogService: blog CRUD + AuthorizationStrategy
+│   ├── person_service.go            # personService: kullanıcı güncelleme iş mantığı
+│   └── authorization.go             # Strategy Pattern: AuthorizationStrategy, AdminOnly, OwnerOrAdmin
 ├── repository/
 │   ├── interfaces.go                # AuthRepository, BlogRepository, PersonRepository interface'leri
-│   ├── person_repo.go               # SQLitePersonRepo + wrapper fonksiyonlar + fotoğraf yükleme
-│   ├── blog_repo.go                 # SQLiteBlogRepo + wrapper fonksiyonlar
-│   └── auth_repo.go                 # SQLiteAuthRepo + wrapper fonksiyonlar
+│   ├── person_repo.go               # SQLitePersonRepo (*sql.DB inject) + wrapper fonksiyonlar + fotoğraf yükleme
+│   ├── blog_repo.go                 # SQLiteBlogRepo (*sql.DB inject) + wrapper fonksiyonlar
+│   ├── auth_repo.go                 # SQLiteAuthRepo (*sql.DB inject) + wrapper fonksiyonlar
+│   └── setup.go                     # SetDB(): varsayılan repo örneklerini başlatır
 ├── models/
 │   ├── person.go                    # Person entity'si ve DTO'ları
 │   └── blog.go                      # Blog entity'si ve DTO'ları
@@ -70,6 +72,11 @@ go-auth-app/
 │   ├── validation.go                # Girdi doğrulama katmanı
 │   ├── rate_limiter.go              # IP bazlı rate limiting
 │   └── web_helpers.go               # TemplateData yapısı ve GetTemplateData
+├── tests/
+│   └── integration/
+│       ├── setup_test.go            # TestMain: in-memory SQLite + httptest.Server kurulumu
+│       ├── health_test.go           # GET /api/health uçtan uca testi
+│       └── auth_test.go             # Register, Login, korumalı endpoint uçtan uca testleri
 ├── templates/
 │   ├── layout.html                  # Tüm sayfaların temel şablonu (navbar, alert'ler)
 │   ├── home.html                    # Yayınlanmış blog'ların gösterildiği ana sayfa
@@ -262,7 +269,114 @@ API endpoint'leri için JWT doğrulama middleware'i:
 
 ---
 
-## 7. Rol Tabanlı Erişim Kontrolü (`handlers/role_middleware.go`)
+---
+
+## 7. Uygulanan Tasarım Desenleri
+
+Proje; öğrenme amacıyla seçilmiş ve gerçek sorunları çözmek üzere uygulanmış beş tasarım deseni içerir.
+
+### 7.1. Chain of Responsibility — `handlers/registration_pipeline.go`
+
+**Sorun:** Kayıt akışı düz bir `[]func` slice'ıydı; yeni adım eklemek zinciri manuel yönetmeyi gerektiriyordu.
+
+**Çözüm:** Her adım `RegistrationHandler` interface'ini implemente eden bir struct'tır. `SetNext()` ile zincir kurulur. Bir adım hata verirse sonrakiler çalışmaz.
+
+```
+EmailCheckHandler → PersonBuildHandler → PersonSaveHandler
+```
+
+```go
+emailCheck := &EmailCheckHandler{}
+emailCheck.SetNext(personBuild).SetNext(personSave)
+chain.Handle(ctx, repo)
+```
+
+**Yeni adım ekleme:** Yalnızca yeni bir struct yaz ve zincire bağla — mevcut koda dokunma.
+
+---
+
+### 7.2. Strategy Pattern — `service/authorization.go`
+
+**Sorun:** Blog güncelleme ve silmede `if userRole != "admin" && blog.AuthorID != userID` kontrolü tekrar ediyordu; farklı iş kuralı gerektirse hardcoded değişmeliydi.
+
+**Çözüm:** `AuthorizationStrategy` interface'i ile yetki kuralı `blogService`'e enjekte edilir.
+
+| Strateji | Kural |
+|---|---|
+| `AdminOnlyStrategy` | Yalnızca `admin` rolü |
+| `OwnerOrAdminStrategy` | Kaynak sahibi veya `admin` (varsayılan) |
+
+```go
+// Test: farklı strateji enjekte et
+svc := service.NewBlogServiceWithStrategy(repo, &AdminOnlyStrategy{})
+```
+
+---
+
+### 7.3. Template Method Pattern — `handlers/page_renderer.go`
+
+**Sorun:** `BlogPageHandler`, `EditorPageHandler`, `AdminPageHandler`, `HomeHandler` hepsinde aynı iskelet tekrar ediyordu: `GetTemplateData → auth kontrolü → token parse → data yükle → renderTemplate`.
+
+**Çözüm:** `RenderPage()` sabit iskeleti tanımlar. Değişen kısım `PageRenderer` interface'i üzerinden sağlanır.
+
+```go
+type PageRenderer interface {
+    RequiresAuth() bool
+    Title() string
+    TemplateName() string
+    LoadData(data *shared.TemplateData, userID int) error
+}
+```
+
+Her sayfa yalnızca `LoadData()` metodunu yazar; auth, token parse ve render tekrar yazılmaz.
+
+---
+
+### 7.4. Repository Pattern (DB Injection) — `repository/`
+
+**Sorun:** Tüm repo metodları global `db.DB` değişkenine doğrudan erişiyordu; test için mock DB enjekte etmek imkânsızdı.
+
+**Çözüm:** Her repo struct'ına `db *sql.DB` alanı eklendi; constructor `*sql.DB` parametre alır.
+
+```go
+// Önce:
+type SQLitePersonRepo struct{}
+func NewPersonRepo() PersonRepository { return &SQLitePersonRepo{} }
+
+// Sonra:
+type SQLitePersonRepo struct { db *sql.DB }
+func NewPersonRepo(database *sql.DB) PersonRepository {
+    return &SQLitePersonRepo{db: database}
+}
+```
+
+`repository.SetDB(db.DB)` — `shared/web_helpers.go` gibi paket düzeyinde wrapper kullanan yerler için geriye dönük uyumluluk sağlar.
+
+---
+
+### 7.5. Builder Pattern — `routes/app_builder.go`
+
+**Sorun:** `RegisterRoutes()` içinde 10+ nesne düz sırayla oluşturuluyordu; bağımlılık grafiği tek bir fonksiyona sıkışmıştı.
+
+**Çözüm:** `AppBuilder` adımları açık metotlara ayırır. Zincirleme yapılandırma desteklenir.
+
+```go
+// Varsayılan kullanım:
+NewAppBuilder(db.DB).Build()
+
+// Özelleştirilmiş kullanım:
+NewAppBuilder(db.DB).
+    WithLoginRateLimit(5, time.Minute).
+    Build()
+```
+
+İç adımlar: `buildRepos() → buildServices() → buildHandlers() → registerRoutes()`
+
+`RoleChecker` da bu değişiklikle birlikte struct'a dönüştürüldü: artık `PersonRepository` enjekte alır, global wrapper fonksiyon kullanmaz.
+
+---
+
+## 8. Rol Tabanlı Erişim Kontrolü (`handlers/role_middleware.go`)
 
 Proje iki rol destekler:
 
@@ -271,18 +385,28 @@ Proje iki rol destekler:
 | `admin` | Tüm sayfalar: kullanıcı listesi, kullanıcı ekleme/düzenleme/silme, tüm blog'lar |
 | `editor` | Yalnızca kendi blog'ları: ekleme, düzenleme, silme |
 
-### Middleware'ler
+### RoleChecker Struct'ı
 
-```
-RoleMiddleware(allowedRoles ...string)  — genel rol kontrolü
-AdminMiddleware(next)                   — sadece admin
-EditorMiddleware(next)                  — admin + editor
+Builder Pattern ile birlikte `RoleChecker` struct'a dönüştürüldü; `PersonRepository` enjekte alır.
+
+```go
+roles := handlers.NewRoleChecker(personRepo)
+
+// Route kaydında:
+http.HandleFunc("/admin", roles.AdminMiddleware(webH.AdminPageHandler))
+http.HandleFunc("/blogs", roles.EditorMiddleware(blogH.BlogPageHandler))
 ```
 
-`RoleMiddleware` akışı:
+| Metot | İzin verilen roller |
+|---|---|
+| `roles.Middleware(allowedRoles...)` | Genel rol kontrolü |
+| `roles.AdminMiddleware(next)` | Yalnızca `admin` |
+| `roles.EditorMiddleware(next)` | `admin` + `editor` |
+
+`Middleware` akışı:
 1. `auth_token` cookie'si okunur → yoksa `/login`'e yönlendir
 2. Token parse edilir → geçersizse `/login`'e yönlendir
-3. `GetPersonByID` ile kullanıcı DB'den alınır
+3. Enjekte edilen `personRepo.GetPersonByID` ile kullanıcı alınır
 4. Rol listesinde var mı kontrol edilir → yoksa `403 Forbidden`
 
 ---
@@ -317,7 +441,9 @@ Her katman bir üst katmanın **interface**'ini kullanır, concrete implementasy
 | `BlogRepository` | `SQLiteBlogRepo` |
 | `PersonRepository` | `SQLitePersonRepo` |
 
-Her implementasyon için `NewXxxRepo()` constructor'ı vardır ve dönüş tipi interface'tir (concrete tip sızdırmaz). Ayrıca `role_middleware.go` ve `shared/web_helpers.go` gibi inject almayan çağrılar için **paket düzeyinde wrapper fonksiyonlar** korunur.
+Her implementasyon için `NewXxxRepo(db *sql.DB)` constructor'ı vardır ve dönüş tipi interface'tir (concrete tip sızdırmaz). Constructor'lar `*sql.DB` parametre alır; global `db.DB`'ye bağımlılık yoktur.
+
+`shared/web_helpers.go` gibi inject almayan çağrılar için **paket düzeyinde wrapper fonksiyonlar** korunur; bunlar `repository.SetDB(db.DB)` ile başlatılan varsayılan örneklere delege eder.
 
 ### 8.4. Handler Struct'ları
 
@@ -328,21 +454,27 @@ Her implementasyon için `NewXxxRepo()` constructor'ı vardır ve dönüş tipi 
 | `PersonHandler` | `PersonRepository` |
 | `WebHandler` | `AuthService` + `PersonRepository` + `BlogRepository` + `PersonService` |
 
-### 8.5. Wire (Bağlama) — `routes/routes.go`
+### 8.5. Wire (Bağlama) — `routes/app_builder.go`
+
+Builder Pattern ile bağımlılık grafiği `AppBuilder` içinde kapsüllendi. `routes.go` tek satıra indi:
 
 ```go
-authRepo   := repository.NewAuthRepo()
-blogRepo   := repository.NewBlogRepo()
-personRepo := repository.NewPersonRepo()
+// routes/routes.go
+func RegisterRoutes() {
+    NewAppBuilder(db.DB).Build()
+}
 
-authSvc    := service.NewAuthService(authRepo, personRepo)
-blogSvc    := service.NewBlogService(blogRepo)
-personSvc  := service.NewPersonService(personRepo)
+// Özelleştirilmiş yapılandırma:
+NewAppBuilder(db.DB).WithLoginRateLimit(5, time.Minute).Build()
+```
 
-authH   := handlers.NewAuthHandler(authSvc)
-blogH   := handlers.NewBlogHandler(blogSvc)
-personH := handlers.NewPersonHandler(personRepo)
-webH    := handlers.NewWebHandler(authSvc, personRepo, blogRepo, personSvc)
+Builder iç adımları:
+
+```go
+repos := b.buildRepos()      // NewAuthRepo(db), NewBlogRepo(db), NewPersonRepo(db)
+svcs  := b.buildServices()   // NewAuthService, NewBlogService, NewPersonService
+h     := b.buildHandlers()   // NewAuthHandler, BlogHandler, PersonHandler, WebHandler, RoleChecker
+b.registerRoutes(h)          // http.HandleFunc kayıtları
 ```
 
 ### 8.6. PostgreSQL'e Geçiş
@@ -418,17 +550,44 @@ personRepo := repository.NewPostgresPersonRepo(db)
 
 ### 10.1. Kayıt Pipeline'ı (`registration_pipeline.go`)
 
-Kayıt işlemi **Chain of Responsibility** deseniyle üç adımda gerçekleşir:
+Kayıt işlemi **Chain of Responsibility** deseniyle üç handler'dan oluşan bir zincirle gerçekleşir:
 
+| Handler | Sorumluluk |
+|---|---|
+| `EmailCheckHandler` | Email daha önce kullanıldı mı? |
+| `PersonBuildHandler` | Şifreyi bcrypt ile hashle, `Person` modelini oluştur |
+| `PersonSaveHandler` | Veritabanına kaydet, oluşan `ID`'yi context'e yaz |
+
+```go
+// Zincir kurulumu (NewRegistrationChain içinde):
+emailCheck.SetNext(personBuild).SetNext(personSave)
 ```
-1. ensureEmailNotExistsStep  →  Email daha önce kullanıldı mı?
-2. buildPersonStep           →  Şifreyi bcrypt ile hashle, Person oluştur
-3. savePersonStep            →  Veritabanına kaydet, ID'yi context'e yaz
+
+- `SetNext()` eklenen handler'ı döner → zincirleme mümkündür
+- Herhangi bir adım hata verirse sonraki handler'lar çalışmaz
+- Yeni adım eklemek mevcut koda dokunmayı gerektirmez
+
+### 10.2. Sayfa Handler'ları — Template Method Pattern
+
+`home.html`, `admin.html`, `blog.html` ve `editor.html` sayfaları **Template Method** iskeletiyle render edilir. `RenderPage()` sabit adımları yönetir; her sayfa yalnızca `LoadData()` yazar:
+
+```go
+type PageRenderer interface {
+    RequiresAuth() bool        // auth kontrolü yapılsın mı?
+    Title() string             // <title> ve data.Title
+    TemplateName() string      // render edilecek .html dosyası
+    LoadData(*TemplateData, userID int) error  // sayfaya özgü iş mantığı
+}
 ```
 
-Herhangi bir adımda hata olursa pipeline durur ve hata yukarı taşınır.
+| PageRenderer | Sayfa | Auth |
+|---|---|---|
+| `homePageRenderer` | `home.html` | Hayır |
+| `adminPageRenderer` | `admin.html` | Evet |
+| `blogPageRenderer` | `blog.html` | Evet |
+| `editorPageRenderer` | `editor.html` | Evet |
 
-### 10.2. Web Handler'ları (`web_handler.go` — `WebHandler` struct)
+### 10.3. Web Handler'ları (`web_handler.go` — `WebHandler` struct)
 
 **`WebLoginHandler` (POST /web-login)**
 1. Email ile kullanıcıyı bul
@@ -457,7 +616,7 @@ Herhangi bir adımda hata olursa pipeline durur ve hata yukarı taşınır.
 2. `TemplateData.Users`'a ata
 3. `admin.html` şablonunu render et
 
-### 10.3. Blog Handler'ları (`blog_handler.go` — `BlogHandler` struct)
+### 10.4. Blog Handler'ları (`blog_handler.go` — `BlogHandler` struct)
 
 **`BlogPageHandler` (GET /blogs)**
 - Admin ise: tüm blog'ları getirir
@@ -484,7 +643,7 @@ Herhangi bir adımda hata olursa pipeline durur ve hata yukarı taşınır.
 2. Yetki kontrolü (admin her blog'u, editor yalnızca kendi blog'unu silebilir)
 3. Blog'u sil, `/blogs`'a yönlendir
 
-### 10.4. Auth API Handler'ları (`auth_handler.go` — `AuthHandler` struct)
+### 10.5. Auth API Handler'ları (`auth_handler.go` — `AuthHandler` struct)
 
 **`LoginHandler` (POST /api/login)** — Swagger dokümantasyonlu
 1. JSON body'den `LoginRequest` oku
@@ -867,9 +1026,20 @@ POST /blog/create  →  published=1  →  Ana sayfada kart olarak görünür
 
 ## 17. Test Altyapısı
 
-Proje, Go'nun yerleşik `testing` paketi ile yazılmış 126 birim testiyle donatılmıştır. Harici test kütüphanesi kullanılmaz.
+Proje, Go'nun yerleşik `testing` paketi ile yazılmış birim ve integration testleri içerir. Harici test kütüphanesi kullanılmaz.
 
-### 17.1. Test Dosyaları
+### 17.1. Test Stratejisi
+
+```
+tests/
+├── Unit testler       → kaynak dosyanın yanında (_test.go)   Go standardı
+└── Integration testler → tests/integration/                  Uçtan uca HTTP
+```
+
+**Neden iki ayrı konum?**
+Unit testler `unexported` sembollere erişmek için kaynak paketiyle aynı dizinde olmalıdır. Integration testler yalnızca dışa açık HTTP API'yi test eder; ayrı paket (`integration_test`) yeterlidir.
+
+### 17.2. Birim Test Dosyaları
 
 | Dosya | Paket | Kapsam |
 |---|---|---|
@@ -878,13 +1048,25 @@ Proje, Go'nun yerleşik `testing` paketi ile yazılmış 126 birim testiyle dona
 | `shared/rate_limiter_test.go` | `shared` | Allow(), pencere sıfırlanması, Middleware (200/429), X-Forwarded-For, RemoteAddr |
 | `service/auth_service_test.go` | `service` | Login (başarılı/hatalı), token üretimi/parse, refresh kaydetme/revoke — mock repo ile |
 | `handlers/auth_handler_test.go` | `handlers_test` | LoginHandler, RefreshHandler, LogoutHandler, JwtAuthMiddleware — mock service ile |
-| `handlers/registration_pipeline_test.go` | `handlers` | ensureEmailNotExistsStep, buildPersonStep, savePersonStep, runRegistrationPipeline |
+| `handlers/registration_pipeline_test.go` | `handlers` | EmailCheckHandler, PersonBuildHandler, PersonSaveHandler, SetNext zinciri, runRegistrationPipeline |
 
-### 17.2. Test Mimarisi
+### 17.3. Integration Test Dosyaları (`tests/integration/`)
+
+Gerçek HTTP katmanını uçtan uca test eder: in-memory SQLite veritabanı + `httptest.Server`.
+
+| Dosya | Kapsam |
+|---|---|
+| `setup_test.go` | `TestMain`: in-memory DB kurulumu, schema oluşturma, `AppBuilder.Build()`, `httptest.NewServer` |
+| `health_test.go` | `GET /api/health` → 200 |
+| `auth_test.go` | Kayıt (200/400), Login (200/401), token parse, korumalı endpoint (200/401) |
+
+**`cleanTables(t)`** her testin başında tabloları temizler; testler birbirini etkilemez.
+
+### 17.4. Test Mimarisi
 
 - **Birim testler:** Her katman kendi mock bağımlılıklarıyla bağımsız test edilir. Gerçek DB veya HTTP sunucusu kullanılmaz.
 - **Mock'lar:** `service/auth_service_test.go` içinde `mockAuthRepo` ve `mockPersonRepo`; `handlers/auth_handler_test.go` içinde `mockAuthService` tanımlanmıştır. Bunlar ilgili interface'leri karşılayan sade struct'lardır.
-- **White-box testler:** `registration_pipeline_test.go` dosyası `package handlers` ile tanımlanmıştır, bu sayede dışa kapalı (`unexported`) pipeline fonksiyonlarına doğrudan erişilir.
+- **White-box testler:** `registration_pipeline_test.go` dosyası `package handlers` ile tanımlanmıştır; `unexported` handler struct'larına doğrudan erişilir. CoR zincir davranışı (`SetNext`, erken durma) da test edilir.
 - **Black-box testler:** `auth_handler_test.go` dosyası `package handlers_test` ile tanımlanmıştır; yalnızca dışa açık API test edilir.
 
 ### 17.3. Testleri Çalıştırma Komutları

@@ -10,20 +10,23 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go-kisi-api/db"
 	"go-kisi-api/models"
 	"go-kisi-api/queries"
 )
 
 // SQLitePersonRepo, PersonRepository'yi SQLite üzerinde implement eder.
-type SQLitePersonRepo struct{}
+// db alanı constructor üzerinden enjekte edilir; global db.DB bağımlılığı yoktur.
+type SQLitePersonRepo struct {
+	db *sql.DB
+}
 
-func NewPersonRepo() PersonRepository {
-	return &SQLitePersonRepo{}
+// NewPersonRepo, bağımlılık enjeksiyonuyla bir PersonRepository oluşturur.
+func NewPersonRepo(database *sql.DB) PersonRepository {
+	return &SQLitePersonRepo{db: database}
 }
 
 func (r *SQLitePersonRepo) AddPerson(p models.Person) (int64, error) {
-	result, err := db.DB.Exec(
+	result, err := r.db.Exec(
 		queries.InsertPerson,
 		p.Name, p.Surname, p.Email, p.Age, p.Phone, p.PhotoPath, p.Role, p.PasswordHash,
 	)
@@ -34,7 +37,7 @@ func (r *SQLitePersonRepo) AddPerson(p models.Person) (int64, error) {
 }
 
 func (r *SQLitePersonRepo) GetAllPeople() ([]models.Person, error) {
-	rows, err := db.DB.Query(queries.SelectAllPeople)
+	rows, err := r.db.Query(queries.SelectAllPeople)
 	if err != nil {
 		return nil, err
 	}
@@ -52,21 +55,21 @@ func (r *SQLitePersonRepo) GetAllPeople() ([]models.Person, error) {
 
 func (r *SQLitePersonRepo) GetPersonByID(id int) (models.Person, error) {
 	var p models.Person
-	row := db.DB.QueryRow(queries.SelectPersonByID, id)
+	row := r.db.QueryRow(queries.SelectPersonByID, id)
 	err := row.Scan(&p.ID, &p.Name, &p.Surname, &p.Email, &p.Age, &p.Phone, &p.PhotoPath, &p.Role, &p.PasswordHash)
 	return p, err
 }
 
 func (r *SQLitePersonRepo) GetPersonByEmail(email string) (models.Person, error) {
 	var p models.Person
-	row := db.DB.QueryRow(queries.SelectPersonByEmail, email)
+	row := r.db.QueryRow(queries.SelectPersonByEmail, email)
 	err := row.Scan(&p.ID, &p.Name, &p.Surname, &p.Email, &p.Age, &p.Phone, &p.PhotoPath, &p.Role, &p.PasswordHash)
 	return p, err
 }
 
 func (r *SQLitePersonRepo) EmailExists(email string) (bool, error) {
 	var id int
-	err := db.DB.QueryRow(queries.SelectPersonIDByEmail, email).Scan(&id)
+	err := r.db.QueryRow(queries.SelectPersonIDByEmail, email).Scan(&id)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -77,12 +80,12 @@ func (r *SQLitePersonRepo) EmailExists(email string) (bool, error) {
 }
 
 func (r *SQLitePersonRepo) DeletePerson(id int) error {
-	_, err := db.DB.Exec(queries.DeletePersonByID, id)
+	_, err := r.db.Exec(queries.DeletePersonByID, id)
 	return err
 }
 
 func (r *SQLitePersonRepo) UpdatePerson(p models.Person) error {
-	_, err := db.DB.Exec(`
+	_, err := r.db.Exec(`
 		UPDATE people
 		SET name = ?, surname = ?, email = ?, age = ?, phone = ?, photo_path = ?, role = ?, password_hash = ?
 		WHERE id = ?
@@ -90,10 +93,12 @@ func (r *SQLitePersonRepo) UpdatePerson(p models.Person) error {
 	return err
 }
 
-// defaultPersonRepo, geriye dönük uyumluluk için kullanılan paket düzeyindeki örnek.
-var defaultPersonRepo PersonRepository = &SQLitePersonRepo{}
+// defaultPersonRepo, web_helpers.go gibi doğrudan repo erişimi gereken yerler için kullanılır.
+// SetDB() çağrısıyla başlatılır; sıfır değerde kullanımı panic'e yol açar.
+var defaultPersonRepo PersonRepository
 
-// Paket düzeyinde wrapper fonksiyonlar — shared ve diğer paketler bunları kullanmaya devam eder.
+// Paket düzeyinde wrapper fonksiyonlar — shared/web_helpers.go bunları kullanır.
+// Yeni kod için doğrudan PersonRepository arayüzünü tercih edin.
 func AddPerson(p models.Person) (int64, error)              { return defaultPersonRepo.AddPerson(p) }
 func GetAllPeople() ([]models.Person, error)               { return defaultPersonRepo.GetAllPeople() }
 func GetPersonByID(id int) (models.Person, error)          { return defaultPersonRepo.GetPersonByID(id) }

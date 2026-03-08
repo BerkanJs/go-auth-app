@@ -1,18 +1,22 @@
 package repository
 
 import (
+	"database/sql"
 	"time"
 
-	"go-kisi-api/db"
 	"go-kisi-api/models"
 	"go-kisi-api/queries"
 )
 
 // SQLiteBlogRepo, BlogRepository'yi SQLite üzerinde implement eder.
-type SQLiteBlogRepo struct{}
+// db alanı constructor üzerinden enjekte edilir; global db.DB bağımlılığı yoktur.
+type SQLiteBlogRepo struct {
+	db *sql.DB
+}
 
-func NewBlogRepo() BlogRepository {
-	return &SQLiteBlogRepo{}
+// NewBlogRepo, bağımlılık enjeksiyonuyla bir BlogRepository oluşturur.
+func NewBlogRepo(database *sql.DB) BlogRepository {
+	return &SQLiteBlogRepo{db: database}
 }
 
 func parseTimeStr(s string) time.Time {
@@ -48,7 +52,7 @@ func scanBlogRow(scanner interface {
 }
 
 func (r *SQLiteBlogRepo) CreateBlog(blog models.Blog) (int64, error) {
-	result, err := db.DB.Exec(
+	result, err := r.db.Exec(
 		queries.InsertBlog,
 		blog.Title, blog.Content, blog.Summary, blog.ImagePath,
 		blog.AuthorID, blog.AuthorName, blog.Published,
@@ -61,7 +65,7 @@ func (r *SQLiteBlogRepo) CreateBlog(blog models.Blog) (int64, error) {
 }
 
 func (r *SQLiteBlogRepo) GetAllBlogs() ([]models.Blog, error) {
-	rows, err := db.DB.Query(queries.SelectAllBlogs)
+	rows, err := r.db.Query(queries.SelectAllBlogs)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +82,7 @@ func (r *SQLiteBlogRepo) GetAllBlogs() ([]models.Blog, error) {
 }
 
 func (r *SQLiteBlogRepo) GetPublishedBlogs() ([]models.Blog, error) {
-	rows, err := db.DB.Query(queries.SelectPublishedBlogs)
+	rows, err := r.db.Query(queries.SelectPublishedBlogs)
 	if err != nil {
 		return nil, err
 	}
@@ -95,12 +99,12 @@ func (r *SQLiteBlogRepo) GetPublishedBlogs() ([]models.Blog, error) {
 }
 
 func (r *SQLiteBlogRepo) GetBlogByID(id int) (models.Blog, error) {
-	row := db.DB.QueryRow(queries.SelectBlogByID, id)
+	row := r.db.QueryRow(queries.SelectBlogByID, id)
 	return scanBlogRow(row)
 }
 
 func (r *SQLiteBlogRepo) GetBlogsByAuthor(authorID int) ([]models.Blog, error) {
-	rows, err := db.DB.Query(queries.SelectBlogsByAuthor, authorID)
+	rows, err := r.db.Query(queries.SelectBlogsByAuthor, authorID)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +121,7 @@ func (r *SQLiteBlogRepo) GetBlogsByAuthor(authorID int) ([]models.Blog, error) {
 }
 
 func (r *SQLiteBlogRepo) UpdateBlog(blog models.Blog) error {
-	_, err := db.DB.Exec(
+	_, err := r.db.Exec(
 		queries.UpdateBlogQuery,
 		blog.Title, blog.Content, blog.Summary, blog.ImagePath,
 		blog.Published, time.Now(), blog.ID,
@@ -126,24 +130,25 @@ func (r *SQLiteBlogRepo) UpdateBlog(blog models.Blog) error {
 }
 
 func (r *SQLiteBlogRepo) DeleteBlog(id int) error {
-	_, err := db.DB.Exec(queries.DeleteBlogByID, id)
+	_, err := r.db.Exec(queries.DeleteBlogByID, id)
 	return err
 }
 
 func (r *SQLiteBlogRepo) UpdateBlogPublishStatus(id int, published bool) error {
-	_, err := db.DB.Exec(queries.UpdateBlogPublishStatusQuery, published, time.Now(), id)
+	_, err := r.db.Exec(queries.UpdateBlogPublishStatusQuery, published, time.Now(), id)
 	return err
 }
 
-// defaultBlogRepo, geriye dönük uyumluluk için kullanılan paket düzeyindeki örnek.
-var defaultBlogRepo BlogRepository = &SQLiteBlogRepo{}
+// defaultBlogRepo, paket düzeyinde wrapper fonksiyonlar için kullanılır.
+// SetDB() çağrısıyla başlatılır; yeni kod için doğrudan BlogRepository arayüzünü tercih edin.
+var defaultBlogRepo BlogRepository
 
-// Paket düzeyinde wrapper fonksiyonlar.
-func CreateBlog(blog models.Blog) (int64, error)             { return defaultBlogRepo.CreateBlog(blog) }
-func GetAllBlogs() ([]models.Blog, error)                    { return defaultBlogRepo.GetAllBlogs() }
-func GetPublishedBlogs() ([]models.Blog, error)              { return defaultBlogRepo.GetPublishedBlogs() }
-func GetBlogByID(id int) (models.Blog, error)                { return defaultBlogRepo.GetBlogByID(id) }
-func GetBlogsByAuthor(id int) ([]models.Blog, error)         { return defaultBlogRepo.GetBlogsByAuthor(id) }
-func UpdateBlog(blog models.Blog) error                      { return defaultBlogRepo.UpdateBlog(blog) }
-func DeleteBlog(id int) error                                { return defaultBlogRepo.DeleteBlog(id) }
-func UpdateBlogPublishStatus(id int, published bool) error   { return defaultBlogRepo.UpdateBlogPublishStatus(id, published) }
+// Paket düzeyinde wrapper fonksiyonlar — geriye dönük uyumluluk için korunur.
+func CreateBlog(blog models.Blog) (int64, error)           { return defaultBlogRepo.CreateBlog(blog) }
+func GetAllBlogs() ([]models.Blog, error)                  { return defaultBlogRepo.GetAllBlogs() }
+func GetPublishedBlogs() ([]models.Blog, error)            { return defaultBlogRepo.GetPublishedBlogs() }
+func GetBlogByID(id int) (models.Blog, error)              { return defaultBlogRepo.GetBlogByID(id) }
+func GetBlogsByAuthor(id int) ([]models.Blog, error)       { return defaultBlogRepo.GetBlogsByAuthor(id) }
+func UpdateBlog(blog models.Blog) error                    { return defaultBlogRepo.UpdateBlog(blog) }
+func DeleteBlog(id int) error                              { return defaultBlogRepo.DeleteBlog(id) }
+func UpdateBlogPublishStatus(id int, p bool) error         { return defaultBlogRepo.UpdateBlogPublishStatus(id, p) }
