@@ -8,8 +8,13 @@ import (
 	"go-kisi-api/queries"
 )
 
-// parseTimeStr SQLite'tan gelen string zamanı time.Time'a çevirir.
-// Birden fazla format denenir; hiçbiri uymazsa zero time döner.
+// SQLiteBlogRepo, BlogRepository'yi SQLite üzerinde implement eder.
+type SQLiteBlogRepo struct{}
+
+func NewBlogRepo() BlogRepository {
+	return &SQLiteBlogRepo{}
+}
+
 func parseTimeStr(s string) time.Time {
 	formats := []string{
 		time.RFC3339,
@@ -24,8 +29,6 @@ func parseTimeStr(s string) time.Time {
 	return time.Time{}
 }
 
-// scanBlogRows tek bir satırı blog struct'ına dönüştürür.
-// *sql.Rows ve *sql.Row her ikisi de Scan metoduna sahiptir; interface ile soyutlandı.
 func scanBlogRow(scanner interface {
 	Scan(...interface{}) error
 }) (models.Blog, error) {
@@ -44,8 +47,7 @@ func scanBlogRow(scanner interface {
 	return blog, nil
 }
 
-// CreateBlog yeni blog oluşturur
-func CreateBlog(blog models.Blog) (int64, error) {
+func (r *SQLiteBlogRepo) CreateBlog(blog models.Blog) (int64, error) {
 	result, err := db.DB.Exec(
 		queries.InsertBlog,
 		blog.Title, blog.Content, blog.Summary, blog.ImagePath,
@@ -58,14 +60,12 @@ func CreateBlog(blog models.Blog) (int64, error) {
 	return result.LastInsertId()
 }
 
-// GetAllBlogs tüm blogları getirir
-func GetAllBlogs() ([]models.Blog, error) {
+func (r *SQLiteBlogRepo) GetAllBlogs() ([]models.Blog, error) {
 	rows, err := db.DB.Query(queries.SelectAllBlogs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var blogs []models.Blog
 	for rows.Next() {
 		blog, err := scanBlogRow(rows)
@@ -77,14 +77,12 @@ func GetAllBlogs() ([]models.Blog, error) {
 	return blogs, nil
 }
 
-// GetPublishedBlogs yayınlanmış blogları getirir
-func GetPublishedBlogs() ([]models.Blog, error) {
+func (r *SQLiteBlogRepo) GetPublishedBlogs() ([]models.Blog, error) {
 	rows, err := db.DB.Query(queries.SelectPublishedBlogs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var blogs []models.Blog
 	for rows.Next() {
 		blog, err := scanBlogRow(rows)
@@ -96,20 +94,17 @@ func GetPublishedBlogs() ([]models.Blog, error) {
 	return blogs, nil
 }
 
-// GetBlogByID ID'ye göre blog getirir
-func GetBlogByID(id int) (models.Blog, error) {
+func (r *SQLiteBlogRepo) GetBlogByID(id int) (models.Blog, error) {
 	row := db.DB.QueryRow(queries.SelectBlogByID, id)
 	return scanBlogRow(row)
 }
 
-// GetBlogsByAuthor yazarın bloglarını getirir
-func GetBlogsByAuthor(authorID int) ([]models.Blog, error) {
+func (r *SQLiteBlogRepo) GetBlogsByAuthor(authorID int) ([]models.Blog, error) {
 	rows, err := db.DB.Query(queries.SelectBlogsByAuthor, authorID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var blogs []models.Blog
 	for rows.Next() {
 		blog, err := scanBlogRow(rows)
@@ -121,8 +116,7 @@ func GetBlogsByAuthor(authorID int) ([]models.Blog, error) {
 	return blogs, nil
 }
 
-// UpdateBlog blog günceller
-func UpdateBlog(blog models.Blog) error {
+func (r *SQLiteBlogRepo) UpdateBlog(blog models.Blog) error {
 	_, err := db.DB.Exec(
 		queries.UpdateBlogQuery,
 		blog.Title, blog.Content, blog.Summary, blog.ImagePath,
@@ -131,14 +125,25 @@ func UpdateBlog(blog models.Blog) error {
 	return err
 }
 
-// DeleteBlog blog siler
-func DeleteBlog(id int) error {
+func (r *SQLiteBlogRepo) DeleteBlog(id int) error {
 	_, err := db.DB.Exec(queries.DeleteBlogByID, id)
 	return err
 }
 
-// UpdateBlogPublishStatus blog yayın durumunu günceller
-func UpdateBlogPublishStatus(id int, published bool) error {
+func (r *SQLiteBlogRepo) UpdateBlogPublishStatus(id int, published bool) error {
 	_, err := db.DB.Exec(queries.UpdateBlogPublishStatusQuery, published, time.Now(), id)
 	return err
 }
+
+// defaultBlogRepo, geriye dönük uyumluluk için kullanılan paket düzeyindeki örnek.
+var defaultBlogRepo BlogRepository = &SQLiteBlogRepo{}
+
+// Paket düzeyinde wrapper fonksiyonlar.
+func CreateBlog(blog models.Blog) (int64, error)             { return defaultBlogRepo.CreateBlog(blog) }
+func GetAllBlogs() ([]models.Blog, error)                    { return defaultBlogRepo.GetAllBlogs() }
+func GetPublishedBlogs() ([]models.Blog, error)              { return defaultBlogRepo.GetPublishedBlogs() }
+func GetBlogByID(id int) (models.Blog, error)                { return defaultBlogRepo.GetBlogByID(id) }
+func GetBlogsByAuthor(id int) ([]models.Blog, error)         { return defaultBlogRepo.GetBlogsByAuthor(id) }
+func UpdateBlog(blog models.Blog) error                      { return defaultBlogRepo.UpdateBlog(blog) }
+func DeleteBlog(id int) error                                { return defaultBlogRepo.DeleteBlog(id) }
+func UpdateBlogPublishStatus(id int, published bool) error   { return defaultBlogRepo.UpdateBlogPublishStatus(id, published) }

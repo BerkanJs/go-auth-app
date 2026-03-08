@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -9,24 +10,22 @@ import (
 
 	"go-kisi-api/models"
 	"go-kisi-api/repository"
+	"go-kisi-api/service"
 	"go-kisi-api/shared"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
-// TemplateData web sayfaları için veri yapısı (shared.TemplateData ile aynı, geriye dönük uyum)
-type TemplateData struct {
-	Title           string
-	IsAuthenticated bool
-	UserName        string
-	UserRole        string
-	Users           []models.PersonResponse
-	Blogs           []models.BlogResponse
-	ErrorMessage    string
-	SuccessMessage  string
+// WebHandler web arayüzü sayfalarını yönetir.
+type WebHandler struct {
+	authSvc    service.AuthService
+	personRepo repository.PersonRepository
+	blogRepo   repository.BlogRepository
+	personSvc  service.PersonService
 }
 
-// StaticHandler statik dosyaları sunar
+func NewWebHandler(authSvc service.AuthService, personRepo repository.PersonRepository, blogRepo repository.BlogRepository, personSvc service.PersonService) *WebHandler {
+	return &WebHandler{authSvc: authSvc, personRepo: personRepo, blogRepo: blogRepo, personSvc: personSvc}
+}
+
 func StaticHandler(w http.ResponseWriter, r *http.Request) {
 	filePath := r.URL.Path[1:]
 	if !isPathSafe(filePath) {
@@ -41,43 +40,30 @@ func isPathSafe(path string) bool {
 	if err != nil {
 		return false
 	}
-	staticAbs, err := filepath.Abs("static")
-	if err != nil {
-		return false
-	}
-	uploadsAbs, err := filepath.Abs("uploads")
-	if err != nil {
-		return false
-	}
+	staticAbs, _ := filepath.Abs("static")
+	uploadsAbs, _ := filepath.Abs("uploads")
 	return hasPrefix(absPath, staticAbs) || hasPrefix(absPath, uploadsAbs)
 }
 
 func hasPrefix(s, prefix string) bool {
-	if len(s) < len(prefix) {
-		return false
-	}
-	return s[:len(prefix)] == prefix
+	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
 
-// HomeHandler ana sayfayı gösterir
-func HomeHandler(w http.ResponseWriter, r *http.Request) {
+func (h *WebHandler) HomeHandler(w http.ResponseWriter, r *http.Request) {
 	data := shared.GetTemplateData(r)
 	data.Title = "Ana Sayfa"
-
-	blogs, err := repository.GetPublishedBlogs()
+	blogs, err := h.blogRepo.GetPublishedBlogs()
 	if err != nil {
 		shared.LogError("HOME_LOAD_ERROR", "Failed to load published blogs", map[string]interface{}{"error": err.Error()})
 		data.ErrorMessage = "Blog'lar yüklenirken bir hata oluştu."
 		renderTemplate(w, "home.html", data)
 		return
 	}
-
 	data.Blogs = models.ToBlogResponseList(blogs)
 	renderTemplate(w, "home.html", data)
 }
 
-// LoginPageHandler login sayfasını gösterir
-func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
+func (h *WebHandler) LoginPageHandler(w http.ResponseWriter, r *http.Request) {
 	data := shared.GetTemplateData(r)
 	data.Title = "Giriş Yap"
 	if data.IsAuthenticated {
@@ -91,8 +77,7 @@ func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
 	renderTemplate(w, "login.html", data)
 }
 
-// RegisterPageHandler register sayfasını gösterir
-func RegisterPageHandler(w http.ResponseWriter, r *http.Request) {
+func (h *WebHandler) RegisterPageHandler(w http.ResponseWriter, r *http.Request) {
 	data := shared.GetTemplateData(r)
 	data.Title = "Kayıt Ol"
 	if data.IsAuthenticated {
@@ -106,58 +91,41 @@ func RegisterPageHandler(w http.ResponseWriter, r *http.Request) {
 	renderTemplate(w, "register.html", data)
 }
 
-// AdminPageHandler admin panelini gösterir
-func AdminPageHandler(w http.ResponseWriter, r *http.Request) {
+func (h *WebHandler) AdminPageHandler(w http.ResponseWriter, r *http.Request) {
 	data := shared.GetTemplateData(r)
 	if !data.IsAuthenticated {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-
 	data.Title = "Admin Panel"
-
-	people, err := repository.GetAllPeople()
+	people, err := h.personRepo.GetAllPeople()
 	if err != nil {
 		shared.LogError("ADMIN_LOAD_ERROR", "Failed to load users", map[string]interface{}{"error": err.Error()})
 		data.ErrorMessage = "Kullanıcılar yüklenirken bir hata oluştu."
 		renderTemplate(w, "admin.html", data)
 		return
 	}
-
 	data.Users = models.ToPersonResponseList(people)
 	renderTemplate(w, "admin.html", data)
 }
 
-// WebLoginHandler web üzerinden giriş yapar
-func WebLoginHandler(w http.ResponseWriter, r *http.Request) {
+func (h *WebHandler) WebLoginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-
 	email := r.FormValue("email")
 	password := r.FormValue("password")
-
-	person, err := repository.GetPersonByEmail(email)
+	person, err := h.authSvc.Login(email, password)
 	if err != nil {
-		shared.LogAuth("LOGIN_FAILED", email, "User not found")
+		shared.LogAuth("LOGIN_FAILED", email, "Invalid credentials")
 		data := shared.GetTemplateData(r)
 		data.Title = "Giriş Yap"
 		data.ErrorMessage = "Email veya şifre hatalı"
 		renderTemplate(w, "login.html", data)
 		return
 	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(person.PasswordHash), []byte(password)); err != nil {
-		shared.LogAuth("LOGIN_FAILED", email, "Wrong password")
-		data := shared.GetTemplateData(r)
-		data.Title = "Giriş Yap"
-		data.ErrorMessage = "Email veya şifre hatalı"
-		renderTemplate(w, "login.html", data)
-		return
-	}
-
-	accessToken, err := GenerateAccessToken(person.ID)
+	accessToken, err := h.authSvc.GenerateAccessToken(person.ID)
 	if err != nil {
 		shared.LogError("LOGIN_TOKEN_ERROR", "Access token generation failed", map[string]interface{}{"user_id": person.ID, "error": err.Error()})
 		data := shared.GetTemplateData(r)
@@ -166,17 +134,8 @@ func WebLoginHandler(w http.ResponseWriter, r *http.Request) {
 		renderTemplate(w, "login.html", data)
 		return
 	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth_token",
-		Value:    accessToken,
-		Path:     "/",
-		MaxAge:   3600,
-		HttpOnly: true,
-	})
-
+	http.SetCookie(w, &http.Cookie{Name: "auth_token", Value: accessToken, Path: "/", MaxAge: 3600, HttpOnly: true})
 	shared.LogAuth("LOGIN_SUCCESS", email, "Logged in via web")
-
 	redirectURL := "/admin"
 	if person.Role == "editor" {
 		redirectURL = "/editor"
@@ -184,19 +143,16 @@ func WebLoginHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
-// WebRegisterHandler web üzerinden kayıt yapar
-func WebRegisterHandler(w http.ResponseWriter, r *http.Request) {
+func (h *WebHandler) WebRegisterHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Redirect(w, r, "/register", http.StatusSeeOther)
 		return
 	}
-
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		shared.LogError("REGISTER_PARSE_ERROR", "Multipart form parse failed", map[string]interface{}{"error": err.Error()})
 		http.Redirect(w, r, "/register", http.StatusSeeOther)
 		return
 	}
-
 	req := models.CreatePersonRequest{
 		Name:     r.FormValue("name"),
 		Surname:  r.FormValue("surname"),
@@ -206,7 +162,6 @@ func WebRegisterHandler(w http.ResponseWriter, r *http.Request) {
 		Role:     r.FormValue("role"),
 		Password: r.FormValue("password"),
 	}
-
 	validator := shared.NewValidator()
 	validator.ValidateCreatePersonRequest(req)
 	if validator.HasError() {
@@ -216,7 +171,6 @@ func WebRegisterHandler(w http.ResponseWriter, r *http.Request) {
 		renderTemplate(w, "register.html", data)
 		return
 	}
-
 	file, header, err := r.FormFile("photo")
 	if err == nil {
 		photoPath, err := repository.UploadPhoto(file, header)
@@ -230,13 +184,12 @@ func WebRegisterHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		req.PhotoPath = photoPath
 	}
-
 	ctx := &registrationContext{Req: req}
-	if err := runRegistrationPipeline(ctx); err != nil {
+	if err := runRegistrationPipeline(ctx, h.personRepo); err != nil {
 		shared.LogAuth("REGISTER_FAILED", req.Email, err.Error())
 		data := shared.GetTemplateData(r)
 		data.Title = "Kayıt Ol"
-		if err == errEmailAlreadyExists {
+		if errors.Is(err, errEmailAlreadyExists) {
 			data.ErrorMessage = "Bu email zaten kayıtlı."
 		} else {
 			data.ErrorMessage = "Kayıt olurken bir hata oluştu."
@@ -244,80 +197,117 @@ func WebRegisterHandler(w http.ResponseWriter, r *http.Request) {
 		renderTemplate(w, "register.html", data)
 		return
 	}
-
 	shared.LogAuth("REGISTER_SUCCESS", req.Email, "User registered successfully")
-
 	data := shared.GetTemplateData(r)
 	if data.IsAuthenticated {
-		http.SetCookie(w, &http.Cookie{
-			Name:     "success_message",
-			Value:    "Kullanıcı başarıyla eklendi!",
-			Path:     "/",
-			MaxAge:   5,
-			HttpOnly: false,
-		})
+		http.SetCookie(w, &http.Cookie{Name: "success_message", Value: "Kullanıcı başarıyla eklendi!", Path: "/", MaxAge: 5, HttpOnly: false})
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 	} else {
 		http.Redirect(w, r, "/login?registered=true", http.StatusSeeOther)
 	}
 }
 
-// WebLogoutHandler web üzerinden çıkış yapar
 func WebLogoutHandler(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth_token",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
+	http.SetCookie(w, &http.Cookie{Name: "auth_token", Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-// WebDeletePersonHandler web üzerinden kullanıcı siler (AJAX)
-func WebDeletePersonHandler(w http.ResponseWriter, r *http.Request) {
+func (h *WebHandler) WebDeletePersonHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
 		http.Error(w, "ID parametresi gerekli", http.StatusBadRequest)
 		return
 	}
-
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		http.Error(w, "Geçersiz ID", http.StatusBadRequest)
 		return
 	}
-
-	if err := repository.DeletePerson(id); err != nil {
+	if err := h.personRepo.DeletePerson(id); err != nil {
 		shared.LogError("WEB_DELETE_ERROR", "Failed to delete user", map[string]interface{}{"user_id": id, "error": err.Error()})
 		http.Error(w, "Kullanıcı silinemedi", http.StatusInternalServerError)
 		return
 	}
-
 	shared.LogAuth("USER_DELETED", fmt.Sprintf("ID: %d", id), "User deleted via web")
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"success": true, "message": "Kullanıcı başarıyla silindi"}`))
 }
 
-// renderTemplate template'i render eder
+func (h *WebHandler) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		return
+	}
+	data := shared.GetTemplateData(r)
+	if !data.IsAuthenticated {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if data.UserRole != "admin" {
+		data.ErrorMessage = "Kullanıcı güncelleme yetkiniz yok."
+		renderTemplate(w, "admin.html", data)
+		return
+	}
+	userID := parseIntFromForm(r.FormValue("user_id"))
+	if userID == 0 {
+		data.ErrorMessage = "Geçersiz kullanıcı ID."
+		renderTemplate(w, "admin.html", data)
+		return
+	}
+	var newPhotoPath string
+	file, header, err := r.FormFile("photo")
+	if err == nil {
+		newPhotoPath, err = repository.UploadPhoto(file, header)
+		if err != nil {
+			shared.LogError("USER_UPDATE_PHOTO_ERROR", "Photo upload failed", map[string]interface{}{"error": err.Error(), "user_id": userID})
+			data.ErrorMessage = "Fotoğraf yüklenemedi."
+			renderTemplate(w, "admin.html", data)
+			return
+		}
+	}
+	req := service.UpdatePersonRequest{
+		UserID:       userID,
+		Name:         r.FormValue("name"),
+		Surname:      r.FormValue("surname"),
+		Email:        r.FormValue("email"),
+		Age:          parseIntFromForm(r.FormValue("age")),
+		Phone:        r.FormValue("phone"),
+		Role:         r.FormValue("role"),
+		NewPassword:  r.FormValue("password"),
+		NewPhotoPath: newPhotoPath,
+	}
+	if err := h.personSvc.UpdatePerson(req); err != nil {
+		shared.LogError("USER_UPDATE_ERROR", "Failed to update user", map[string]interface{}{"error": err.Error(), "user_id": userID})
+		switch {
+		case errors.Is(err, service.ErrPersonNotFound):
+			data.ErrorMessage = "Kullanıcı bulunamadı."
+		case errors.Is(err, service.ErrEmailTaken):
+			data.ErrorMessage = "Bu email zaten kayıtlı."
+		case errors.Is(err, service.ErrPasswordHash):
+			data.ErrorMessage = "Şifre işlenirken bir hata oluştu."
+		default:
+			data.ErrorMessage = "Kullanıcı güncellenirken bir hata oluştu."
+		}
+		renderTemplate(w, "admin.html", data)
+		return
+	}
+	shared.LogInfo("USER_UPDATED", "User updated successfully", map[string]interface{}{"user_id": userID})
+	http.SetCookie(w, &http.Cookie{Name: "success_message", Value: "Kullanıcı başarıyla güncellendi!", Path: "/", MaxAge: 5, HttpOnly: false})
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
 func renderTemplate(w http.ResponseWriter, templateName string, data shared.TemplateData) {
-	templates, err := template.ParseFiles(
-		"templates/layout.html",
-		"templates/"+templateName,
-	)
+	templates, err := template.ParseFiles("templates/layout.html", "templates/"+templateName)
 	if err != nil {
 		shared.LogError("TEMPLATE_PARSE_ERROR", "Template parse failed", map[string]interface{}{"template": templateName, "error": err.Error()})
 		http.Error(w, "Sayfa yüklenemedi", http.StatusInternalServerError)
 		return
 	}
-
 	if err := templates.ExecuteTemplate(w, "layout", data); err != nil {
 		shared.LogError("TEMPLATE_EXEC_ERROR", "Template execute failed", map[string]interface{}{"template": templateName, "error": err.Error()})
 	}
