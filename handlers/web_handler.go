@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"html/template"
@@ -57,8 +58,8 @@ type homePageRenderer struct {
 func (p *homePageRenderer) RequiresAuth() bool  { return false }
 func (p *homePageRenderer) Title() string        { return "Ana Sayfa" }
 func (p *homePageRenderer) TemplateName() string { return "home.html" }
-func (p *homePageRenderer) LoadData(data *shared.TemplateData, _ int) error {
-	blogs, err := p.blogRepo.GetPublishedBlogs()
+func (p *homePageRenderer) LoadData(ctx context.Context, data *shared.TemplateData, _ int) error {
+	blogs, err := p.blogRepo.GetPublishedBlogs(ctx)
 	if err != nil {
 		shared.LogError("HOME_LOAD_ERROR", "Failed to load published blogs", map[string]interface{}{"error": err.Error()})
 		return err
@@ -107,8 +108,8 @@ type adminPageRenderer struct {
 func (p *adminPageRenderer) RequiresAuth() bool  { return true }
 func (p *adminPageRenderer) Title() string        { return "Admin Panel" }
 func (p *adminPageRenderer) TemplateName() string { return "admin.html" }
-func (p *adminPageRenderer) LoadData(data *shared.TemplateData, _ int) error {
-	people, err := p.personRepo.GetAllPeople()
+func (p *adminPageRenderer) LoadData(ctx context.Context, data *shared.TemplateData, _ int) error {
+	people, err := p.personRepo.GetAllPeople(ctx)
 	if err != nil {
 		shared.LogError("ADMIN_LOAD_ERROR", "Failed to load users", map[string]interface{}{"error": err.Error()})
 		return err
@@ -128,7 +129,7 @@ func (h *WebHandler) WebLoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	email := r.FormValue("email")
 	password := r.FormValue("password")
-	person, err := h.authSvc.Login(email, password)
+	person, err := h.authSvc.Login(r.Context(), email, password)
 	if err != nil {
 		shared.LogAuth("LOGIN_FAILED", email, "Invalid credentials")
 		data := shared.GetTemplateData(r)
@@ -196,8 +197,8 @@ func (h *WebHandler) WebRegisterHandler(w http.ResponseWriter, r *http.Request) 
 		}
 		req.PhotoPath = photoPath
 	}
-	ctx := &registrationContext{Req: req}
-	if err := runRegistrationPipeline(ctx, h.personRepo); err != nil {
+	regCtx := &registrationContext{Req: req}
+	if err := runRegistrationPipeline(r.Context(), regCtx, h.personRepo); err != nil {
 		shared.LogAuth("REGISTER_FAILED", req.Email, err.Error())
 		data := shared.GetTemplateData(r)
 		data.Title = "Kayıt Ol"
@@ -239,7 +240,7 @@ func (h *WebHandler) WebDeletePersonHandler(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "Geçersiz ID", http.StatusBadRequest)
 		return
 	}
-	if err := h.personRepo.DeletePerson(id); err != nil {
+	if err := h.personRepo.DeletePerson(r.Context(), id); err != nil {
 		shared.LogError("WEB_DELETE_ERROR", "Failed to delete user", map[string]interface{}{"user_id": id, "error": err.Error()})
 		http.Error(w, "Kullanıcı silinemedi", http.StatusInternalServerError)
 		return
@@ -293,7 +294,7 @@ func (h *WebHandler) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 		NewPassword:  r.FormValue("password"),
 		NewPhotoPath: newPhotoPath,
 	}
-	if err := h.personSvc.UpdatePerson(req); err != nil {
+	if err := h.personSvc.UpdatePerson(r.Context(), req); err != nil {
 		shared.LogError("USER_UPDATE_ERROR", "Failed to update user", map[string]interface{}{"error": err.Error(), "user_id": userID})
 		switch {
 		case errors.Is(err, service.ErrPersonNotFound):

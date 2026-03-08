@@ -63,8 +63,8 @@ func (h *PersonHandler) AddPersonHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	ctx := &registrationContext{Req: req}
-	if err := runRegistrationPipeline(ctx, h.personRepo); err != nil {
+	regCtx := &registrationContext{Req: req}
+	if err := runRegistrationPipeline(r.Context(), regCtx, h.personRepo); err != nil {
 		switch {
 		case errors.Is(err, errEmailAlreadyExists):
 			shared.WriteError(w, http.StatusBadRequest, shared.ErrEmailAlreadyExists, nil)
@@ -74,7 +74,7 @@ func (h *PersonHandler) AddPersonHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	json.NewEncoder(w).Encode(models.ToPersonResponse(ctx.Person))
+	json.NewEncoder(w).Encode(models.ToPersonResponse(regCtx.Person))
 }
 
 // GetAllPeopleHandler godoc
@@ -85,7 +85,7 @@ func (h *PersonHandler) AddPersonHandler(w http.ResponseWriter, r *http.Request)
 // @Success 200 {array} models.PersonResponse
 // @Router /all [get]
 func (h *PersonHandler) GetAllPeopleHandler(w http.ResponseWriter, r *http.Request) {
-	people, err := h.personRepo.GetAllPeople()
+	people, err := h.personRepo.GetAllPeople(r.Context())
 	if shared.HandleError(w, err, http.StatusInternalServerError, "Kullanıcılar getirilemedi") {
 		return
 	}
@@ -102,7 +102,7 @@ func (h *PersonHandler) GetAllPeopleHandler(w http.ResponseWriter, r *http.Reque
 // @Router /get [get]
 func (h *PersonHandler) GetPersonByIDHandler(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.Atoi(r.URL.Query().Get("id"))
-	p, err := h.personRepo.GetPersonByID(id)
+	p, err := h.personRepo.GetPersonByID(r.Context(), id)
 	if shared.HandleError(w, err, http.StatusNotFound, shared.ErrPersonNotFound) {
 		return
 	}
@@ -117,7 +117,7 @@ func (h *PersonHandler) GetPersonByIDHandler(w http.ResponseWriter, r *http.Requ
 // @Router /delete [get]
 func (h *PersonHandler) DeletePersonHandler(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.Atoi(r.URL.Query().Get("id"))
-	err := h.personRepo.DeletePerson(id)
+	err := h.personRepo.DeletePerson(r.Context(), id)
 	if shared.HandleError(w, err, http.StatusInternalServerError, "Kullanıcı silinemedi") {
 		return
 	}

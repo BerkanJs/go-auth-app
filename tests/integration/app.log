@@ -50,3 +50,23 @@
 [2026-03-08 12:06:40] HTTP_ERROR: Authorization header gerekli - map[error:<nil> status:401]
 [2026-03-08 12:06:40] AUTH: LOGIN_SUCCESS - User: ali@example.com - map[action:LOGIN_SUCCESS details:User logged in successfully user_id:ali@example.com]
 [2026-03-08 12:06:40] SUCCESS: Giriş başarılı - {AccessToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjUsImV4cCI6MTc3Mjk2MTcwMCwiaWF0IjoxNzcyOTYwODAwfQ.YbsiA8x-qkt96S1PzMMM0j7JFXmvwzrfykibThAYxvA RefreshToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjUsImV4cCI6MTc3MzU2NTYwMCwiaWF0IjoxNzcyOTYwODAwfQ.d0-Oh8BQ3KOskoqLiKbJQExWZX3lBP3PA3oicXFIcOs}
+[2026-03-08 12:33:43] HTTP_ERROR: Bu email ile kayıt zaten mevcut - map[error:<nil> status:400]
+[2026-03-08 12:33:44] AUTH: LOGIN_SUCCESS - User: ali@example.com - map[action:LOGIN_SUCCESS details:User logged in successfully user_id:ali@example.com]
+[2026-03-08 12:33:44] SUCCESS: Giriş başarılı - {AccessToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsImV4cCI6MTc3Mjk2MzMyNCwiaWF0IjoxNzcyOTYyNDI0fQ.5IUnjWQQZuHz7DPviatntrcY9moTvjalyHlNuudDq78 RefreshToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsImV4cCI6MTc3MzU2NzIyNCwiaWF0IjoxNzcyOTYyNDI0fQ.bhbJx8tkTcKMRsfxk3XfttFqn7TfuOxHMmrIeMtnkJw}
+[2026-03-08 12:33:44] AUTH: LOGIN_FAILED - User: ali@example.com - map[action:LOGIN_FAILED details:Invalid credentials user_id:ali@example.com]
+[2026-03-08 12:33:44] CUSTOM_ERROR: Kullanıcı veya şifre hatalı - map[code:401 details:map[] type:auth]
+[2026-03-08 12:33:44] AUTH: LOGIN_FAILED - User: yok@example.com - map[action:LOGIN_FAILED details:Invalid credentials user_id:yok@example.com]
+[2026-03-08 12:33:44] CUSTOM_ERROR: Kullanıcı veya şifre hatalı - map[code:401 details:map[] type:auth]
+[2026-03-08 12:33:44] HTTP_ERROR: Authorization header gerekli - map[error:<nil> status:401]
+[2026-03-08 12:33:44] AUTH: LOGIN_SUCCESS - User: ali@example.com - map[action:LOGIN_SUCCESS details:User logged in successfully user_id:ali@example.com]
+[2026-03-08 12:33:44] SUCCESS: Giriş başarılı - {AccessToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjUsImV4cCI6MTc3Mjk2MzMyNCwiaWF0IjoxNzcyOTYyNDI0fQ.NNu0PZtd3CcTxIfpjHdg8C6TqADLkTbMtfjQU1RmHp4 RefreshToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjUsImV4cCI6MTc3MzU2NzIyNCwiaWF0IjoxNzcyOTYyNDI0fQ.5ogxoZqF_oZKsZGV2lcgnCdzuJEbYXTHSz4O5FQm59k}
+[2026-03-08 12:35:18] HTTP_ERROR: Bu email ile kayıt zaten mevcut - map[error:<nil> status:400]
+[2026-03-08 12:35:19] AUTH: LOGIN_SUCCESS - User: ali@example.com - map[action:LOGIN_SUCCESS details:User logged in successfully user_id:ali@example.com]
+[2026-03-08 12:35:19] SUCCESS: Giriş başarılı - {AccessToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsImV4cCI6MTc3Mjk2MzQxOSwiaWF0IjoxNzcyOTYyNTE5fQ.a-G3KcxryK_517e62-UPsBWgJGp9eigroq0DwxW2JN4 RefreshToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsImV4cCI6MTc3MzU2NzMxOSwiaWF0IjoxNzcyOTYyNTE5fQ.Arp5V8-kxE29kA-qeHB4fhrjwiWY_0DSPl5FgCjetig}
+[2026-03-08 12:35:19] AUTH: LOGIN_FAILED - User: ali@example.com - map[action:LOGIN_FAILED details:Invalid credentials user_id:ali@example.com]
+[2026-03-08 12:35:19] CUSTOM_ERROR: Kullanıcı veya şifre hatalı - map[code:401 details:map[] type:auth]
+[2026-03-08 12:35:19] AUTH: LOGIN_FAILED - User: yok@example.com - map[action:LOGIN_FAILED details:Invalid credentials user_id:yok@example.com]
+[2026-03-08 12:35:19] CUSTOM_ERROR: Kullanıcı veya şifre hatalı - map[code:401 details:map[] type:auth]
+[2026-03-08 12:35:19] HTTP_ERROR: Authorization header gerekli - map[error:<nil> status:401]
+[2026-03-08 12:35:19] AUTH: LOGIN_SUCCESS - User: ali@example.com - map[action:LOGIN_SUCCESS details:User logged in successfully user_id:ali@example.com]
+[2026-03-08 12:35:19] SUCCESS: Giriş başarılı - {AccessToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjUsImV4cCI6MTc3Mjk2MzQxOSwiaWF0IjoxNzcyOTYyNTE5fQ.sxiq0yCbWcZyVJxN0omc5DK5KFy9QKJGpF8Pggvu2MI RefreshToken:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjUsImV4cCI6MTc3MzU2NzMxOSwiaWF0IjoxNzcyOTYyNTE5fQ.ZNymoX7AHFeuTdsva6WSHN5hDfCeO1nBcKczc6SyRKk}

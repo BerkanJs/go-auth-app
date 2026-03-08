@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"time"
 
@@ -18,8 +19,8 @@ func NewAuthRepo(database *sql.DB) AuthRepository {
 	return &SQLiteAuthRepo{db: database}
 }
 
-func (r *SQLiteAuthRepo) SaveRefreshToken(userID int, token string) error {
-	_, err := r.db.Exec(
+func (r *SQLiteAuthRepo) SaveRefreshToken(ctx context.Context, userID int, token string) error {
+	_, err := r.db.ExecContext(ctx,
 		queries.InsertRefreshToken,
 		userID,
 		token,
@@ -28,17 +29,17 @@ func (r *SQLiteAuthRepo) SaveRefreshToken(userID int, token string) error {
 	return err
 }
 
-func (r *SQLiteAuthRepo) IsRefreshTokenValid(token string) (bool, error) {
+func (r *SQLiteAuthRepo) IsRefreshTokenValid(ctx context.Context, token string) (bool, error) {
 	var revoked int
-	err := r.db.QueryRow(queries.SelectRefreshTokenRevoked, token).Scan(&revoked)
+	err := r.db.QueryRowContext(ctx, queries.SelectRefreshTokenRevoked, token).Scan(&revoked)
 	if err != nil {
 		return false, nil
 	}
 	return revoked == 0, nil
 }
 
-func (r *SQLiteAuthRepo) RevokeRefreshToken(token string) error {
-	_, err := r.db.Exec(
+func (r *SQLiteAuthRepo) RevokeRefreshToken(ctx context.Context, token string) error {
+	_, err := r.db.ExecContext(ctx,
 		queries.RevokeRefreshTokenQuery,
 		time.Now().UTC().Format(time.RFC3339),
 		token,
@@ -51,6 +52,12 @@ func (r *SQLiteAuthRepo) RevokeRefreshToken(token string) error {
 var defaultAuthRepo AuthRepository
 
 // Paket düzeyinde wrapper fonksiyonlar — geriye dönük uyumluluk için korunur.
-func SaveRefreshToken(userID int, token string) error { return defaultAuthRepo.SaveRefreshToken(userID, token) }
-func IsRefreshTokenValid(token string) (bool, error)  { return defaultAuthRepo.IsRefreshTokenValid(token) }
-func RevokeRefreshToken(token string) error           { return defaultAuthRepo.RevokeRefreshToken(token) }
+func SaveRefreshToken(ctx context.Context, userID int, token string) error {
+	return defaultAuthRepo.SaveRefreshToken(ctx, userID, token)
+}
+func IsRefreshTokenValid(ctx context.Context, token string) (bool, error) {
+	return defaultAuthRepo.IsRefreshTokenValid(ctx, token)
+}
+func RevokeRefreshToken(ctx context.Context, token string) error {
+	return defaultAuthRepo.RevokeRefreshToken(ctx, token)
+}

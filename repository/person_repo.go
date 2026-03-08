@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"fmt"
@@ -25,8 +26,8 @@ func NewPersonRepo(database *sql.DB) PersonRepository {
 	return &SQLitePersonRepo{db: database}
 }
 
-func (r *SQLitePersonRepo) AddPerson(p models.Person) (int64, error) {
-	result, err := r.db.Exec(
+func (r *SQLitePersonRepo) AddPerson(ctx context.Context, p models.Person) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
 		queries.InsertPerson,
 		p.Name, p.Surname, p.Email, p.Age, p.Phone, p.PhotoPath, p.Role, p.PasswordHash,
 	)
@@ -36,8 +37,8 @@ func (r *SQLitePersonRepo) AddPerson(p models.Person) (int64, error) {
 	return result.LastInsertId()
 }
 
-func (r *SQLitePersonRepo) GetAllPeople() ([]models.Person, error) {
-	rows, err := r.db.Query(queries.SelectAllPeople)
+func (r *SQLitePersonRepo) GetAllPeople(ctx context.Context) ([]models.Person, error) {
+	rows, err := r.db.QueryContext(ctx, queries.SelectAllPeople)
 	if err != nil {
 		return nil, err
 	}
@@ -53,23 +54,23 @@ func (r *SQLitePersonRepo) GetAllPeople() ([]models.Person, error) {
 	return people, nil
 }
 
-func (r *SQLitePersonRepo) GetPersonByID(id int) (models.Person, error) {
+func (r *SQLitePersonRepo) GetPersonByID(ctx context.Context, id int) (models.Person, error) {
 	var p models.Person
-	row := r.db.QueryRow(queries.SelectPersonByID, id)
+	row := r.db.QueryRowContext(ctx, queries.SelectPersonByID, id)
 	err := row.Scan(&p.ID, &p.Name, &p.Surname, &p.Email, &p.Age, &p.Phone, &p.PhotoPath, &p.Role, &p.PasswordHash)
 	return p, err
 }
 
-func (r *SQLitePersonRepo) GetPersonByEmail(email string) (models.Person, error) {
+func (r *SQLitePersonRepo) GetPersonByEmail(ctx context.Context, email string) (models.Person, error) {
 	var p models.Person
-	row := r.db.QueryRow(queries.SelectPersonByEmail, email)
+	row := r.db.QueryRowContext(ctx, queries.SelectPersonByEmail, email)
 	err := row.Scan(&p.ID, &p.Name, &p.Surname, &p.Email, &p.Age, &p.Phone, &p.PhotoPath, &p.Role, &p.PasswordHash)
 	return p, err
 }
 
-func (r *SQLitePersonRepo) EmailExists(email string) (bool, error) {
+func (r *SQLitePersonRepo) EmailExists(ctx context.Context, email string) (bool, error) {
 	var id int
-	err := r.db.QueryRow(queries.SelectPersonIDByEmail, email).Scan(&id)
+	err := r.db.QueryRowContext(ctx, queries.SelectPersonIDByEmail, email).Scan(&id)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -79,13 +80,13 @@ func (r *SQLitePersonRepo) EmailExists(email string) (bool, error) {
 	return true, nil
 }
 
-func (r *SQLitePersonRepo) DeletePerson(id int) error {
-	_, err := r.db.Exec(queries.DeletePersonByID, id)
+func (r *SQLitePersonRepo) DeletePerson(ctx context.Context, id int) error {
+	_, err := r.db.ExecContext(ctx, queries.DeletePersonByID, id)
 	return err
 }
 
-func (r *SQLitePersonRepo) UpdatePerson(p models.Person) error {
-	_, err := r.db.Exec(`
+func (r *SQLitePersonRepo) UpdatePerson(ctx context.Context, p models.Person) error {
+	_, err := r.db.ExecContext(ctx, `
 		UPDATE people
 		SET name = ?, surname = ?, email = ?, age = ?, phone = ?, photo_path = ?, role = ?, password_hash = ?
 		WHERE id = ?
@@ -99,13 +100,25 @@ var defaultPersonRepo PersonRepository
 
 // Paket düzeyinde wrapper fonksiyonlar — shared/web_helpers.go bunları kullanır.
 // Yeni kod için doğrudan PersonRepository arayüzünü tercih edin.
-func AddPerson(p models.Person) (int64, error)              { return defaultPersonRepo.AddPerson(p) }
-func GetAllPeople() ([]models.Person, error)               { return defaultPersonRepo.GetAllPeople() }
-func GetPersonByID(id int) (models.Person, error)          { return defaultPersonRepo.GetPersonByID(id) }
-func GetPersonByEmail(email string) (models.Person, error) { return defaultPersonRepo.GetPersonByEmail(email) }
-func EmailExists(email string) (bool, error)               { return defaultPersonRepo.EmailExists(email) }
-func DeletePerson(id int) error                            { return defaultPersonRepo.DeletePerson(id) }
-func UpdatePerson(p models.Person) error                   { return defaultPersonRepo.UpdatePerson(p) }
+func AddPerson(ctx context.Context, p models.Person) (int64, error) {
+	return defaultPersonRepo.AddPerson(ctx, p)
+}
+func GetAllPeople(ctx context.Context) ([]models.Person, error) {
+	return defaultPersonRepo.GetAllPeople(ctx)
+}
+func GetPersonByID(ctx context.Context, id int) (models.Person, error) {
+	return defaultPersonRepo.GetPersonByID(ctx, id)
+}
+func GetPersonByEmail(ctx context.Context, email string) (models.Person, error) {
+	return defaultPersonRepo.GetPersonByEmail(ctx, email)
+}
+func EmailExists(ctx context.Context, email string) (bool, error) {
+	return defaultPersonRepo.EmailExists(ctx, email)
+}
+func DeletePerson(ctx context.Context, id int) error { return defaultPersonRepo.DeletePerson(ctx, id) }
+func UpdatePerson(ctx context.Context, p models.Person) error {
+	return defaultPersonRepo.UpdatePerson(ctx, p)
+}
 
 // DeleteUploadedFile ve UploadPhoto dosya sistemi operasyonlarıdır; DB ile ilgisi yoktur.
 // PersonRepository interface'ine dahil edilmezler, serbest fonksiyon olarak kalırlar.

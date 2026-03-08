@@ -36,7 +36,7 @@ func (rc *RoleChecker) Middleware(allowedRoles ...string) func(http.HandlerFunc)
 			}
 
 			// Enjekte edilen repo kullanılır — global paket fonksiyonu değil
-			person, err := rc.personRepo.GetPersonByID(claims.UserID)
+			person, err := rc.personRepo.GetPersonByID(r.Context(), claims.UserID)
 			if err != nil {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return

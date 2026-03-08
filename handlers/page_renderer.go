@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
 	"go-kisi-api/shared"
@@ -12,13 +13,14 @@ type PageRenderer interface {
 	RequiresAuth() bool
 	Title() string
 	TemplateName() string
-	LoadData(data *shared.TemplateData, userID int) error
+	LoadData(ctx context.Context, data *shared.TemplateData, userID int) error
 }
 
 // RenderPage, Template Method: ortak iskelet burada tanımlıdır.
 // Auth kontrolü, token parse, başlık atama ve template render
 // değişmeyen adımlardır. Yalnızca LoadData her sayfa için farklıdır.
 func RenderPage(w http.ResponseWriter, r *http.Request, renderer PageRenderer) {
+	ctx := r.Context()
 	data := shared.GetTemplateData(r)
 
 	var userID int
@@ -37,7 +39,7 @@ func RenderPage(w http.ResponseWriter, r *http.Request, renderer PageRenderer) {
 
 	data.Title = renderer.Title()
 
-	if err := renderer.LoadData(&data, userID); err != nil {
+	if err := renderer.LoadData(ctx, &data, userID); err != nil {
 		shared.LogError("PAGE_LOAD_ERROR", "Failed to load page data", map[string]interface{}{
 			"template": renderer.TemplateName(),
 			"error":    err.Error(),

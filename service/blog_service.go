@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -29,14 +30,14 @@ func NewBlogServiceWithStrategy(repo repository.BlogRepository, authz Authorizat
 	return &blogService{repo: repo, authz: authz}
 }
 
-func (s *blogService) GetBlogsForUser(userRole string, userID int) ([]models.Blog, error) {
+func (s *blogService) GetBlogsForUser(ctx context.Context, userRole string, userID int) ([]models.Blog, error) {
 	if userRole == "admin" {
-		return s.repo.GetAllBlogs()
+		return s.repo.GetAllBlogs(ctx)
 	}
-	return s.repo.GetBlogsByAuthor(userID)
+	return s.repo.GetBlogsByAuthor(ctx, userID)
 }
 
-func (s *blogService) CreateBlog(title, content, summary, imagePath string, published bool, authorID int, authorName string) (int64, error) {
+func (s *blogService) CreateBlog(ctx context.Context, title, content, summary, imagePath string, published bool, authorID int, authorName string) (int64, error) {
 	blog := models.Blog{
 		Title:      title,
 		Content:    content,
@@ -48,11 +49,11 @@ func (s *blogService) CreateBlog(title, content, summary, imagePath string, publ
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
-	return s.repo.CreateBlog(blog)
+	return s.repo.CreateBlog(ctx, blog)
 }
 
-func (s *blogService) UpdateBlog(blogID int, title, content, summary, imagePath string, published bool, userRole string, userID int) error {
-	existing, err := s.repo.GetBlogByID(blogID)
+func (s *blogService) UpdateBlog(ctx context.Context, blogID int, title, content, summary, imagePath string, published bool, userRole string, userID int) error {
+	existing, err := s.repo.GetBlogByID(ctx, blogID)
 	if err != nil {
 		return ErrBlogNotFound
 	}
@@ -80,11 +81,11 @@ func (s *blogService) UpdateBlog(blogID int, title, content, summary, imagePath 
 		CreatedAt:  existing.CreatedAt,
 		UpdatedAt:  time.Now(),
 	}
-	return s.repo.UpdateBlog(updated)
+	return s.repo.UpdateBlog(ctx, updated)
 }
 
-func (s *blogService) DeleteBlog(blogID int, userRole string, userID int) error {
-	blog, err := s.repo.GetBlogByID(blogID)
+func (s *blogService) DeleteBlog(ctx context.Context, blogID int, userRole string, userID int) error {
+	blog, err := s.repo.GetBlogByID(ctx, blogID)
 	if err != nil {
 		return ErrBlogNotFound
 	}
@@ -94,5 +95,5 @@ func (s *blogService) DeleteBlog(blogID int, userRole string, userID int) error 
 		return ErrPermissionDenied
 	}
 
-	return s.repo.DeleteBlog(blogID)
+	return s.repo.DeleteBlog(ctx, blogID)
 }

@@ -1,6 +1,6 @@
 # Go Kisi API — Proje Dokümantasyonu
 
-Bu doküman, projenin güncel mimarisini, katmanlarını, veri modellerini, akışlarını ve gelecek planlarını ayrıntılı biçimde açıklar.
+Bu doküman, projenin güncel mimarisini, katmanlarını, veri modellerini, akışlarını ve tasarım kararlarını ayrıntılı biçimde açıklar.
 
 ---
 
@@ -32,1115 +32,738 @@ Uygulama **`:8081`** portunda çalışır.
 ```
 go-auth-app/
 ├── main.go                          # Giriş noktası, global middleware zinciri
+├── people.db                        # SQLite veritabanı
+├── app.log                          # Yapılandırılmış JSON uygulama logları
+├── projectDocument.md               # Bu doküman
 ├── routes/
 │   ├── routes.go                    # RegisterRoutes — AppBuilder'a delege eder
 │   └── app_builder.go               # Builder Pattern: repo→service→handler→route inşası
 ├── handlers/
-│   ├── auth_handler.go              # AuthHandler struct: Login, Refresh, Logout, JwtAuthMiddleware
-│   ├── person_handler.go            # PersonHandler struct: kişi CRUD API endpoint'leri
-│   ├── web_handler.go               # WebHandler struct: Login, Register, Update, Delete + PageRenderer'lar
-│   ├── blog_handler.go              # BlogHandler struct: Blog/Editor sayfası + CRUD + PageRenderer'lar
-│   ├── page_renderer.go             # Template Method Pattern: RenderPage iskeleti + PageRenderer arayüzü
-│   ├── registration_pipeline.go     # Chain of Responsibility: EmailCheck→PersonBuild→PersonSave
-│   ├── role_middleware.go           # RoleChecker struct (inject edilmiş PersonRepository)
-│   └── health_handler.go            # Sağlık kontrolü endpoint'i
+│   ├── auth_handler.go              # AuthHandler: Login, Refresh, Logout, JwtAuthMiddleware
+│   ├── person_handler.go            # PersonHandler: kişi CRUD API endpoint'leri
+│   ├── web_handler.go               # WebHandler: Login, Register, Update, Delete + PageRenderer'lar
+│   ├── blog_handler.go              # BlogHandler: blog CRUD + sayfa renderer'ları
+│   ├── page_renderer.go             # Template Method: PageRenderer interface + RenderPage()
+│   ├── registration_pipeline.go     # Chain of Responsibility: kayıt pipeline'ı
+│   ├── role_middleware.go           # AdminMiddleware, EditorMiddleware, RoleChecker
+│   ├── auth_handler_test.go         # AuthHandler ve JwtAuthMiddleware unit testleri
+│   └── registration_pipeline_test.go# Pipeline handler'larının unit testleri
 ├── service/
-│   ├── interfaces.go                # AuthService, BlogService, PersonService interface'leri
-│   ├── auth_service.go              # authService: Login, token üretimi/doğrulaması
-│   ├── blog_service.go              # blogService: blog CRUD + AuthorizationStrategy
-│   ├── person_service.go            # personService: kullanıcı güncelleme iş mantığı
-│   └── authorization.go             # Strategy Pattern: AuthorizationStrategy, AdminOnly, OwnerOrAdmin
+│   ├── interfaces.go                # AuthService, BlogService, PersonService, AuthorizationStrategy
+│   ├── auth_service.go              # authService implementasyonu
+│   ├── auth_service_test.go         # AuthService unit testleri (mock repo)
+│   ├── blog_service.go              # blogService implementasyonu
+│   ├── authorization.go             # Strategy Pattern: AdminOnly, OwnerOrAdmin
+│   └── person_service.go            # personService implementasyonu
 ├── repository/
-│   ├── interfaces.go                # AuthRepository, BlogRepository, PersonRepository interface'leri
-│   ├── person_repo.go               # SQLitePersonRepo (*sql.DB inject) + wrapper fonksiyonlar + fotoğraf yükleme
-│   ├── blog_repo.go                 # SQLiteBlogRepo (*sql.DB inject) + wrapper fonksiyonlar
-│   ├── auth_repo.go                 # SQLiteAuthRepo (*sql.DB inject) + wrapper fonksiyonlar
-│   └── setup.go                     # SetDB(): varsayılan repo örneklerini başlatır
+│   ├── interfaces.go                # PersonRepository, AuthRepository, BlogRepository
+│   ├── person_repo.go               # SQLitePersonRepo implementasyonu + paket seviyesi wrapper'lar
+│   ├── auth_repo.go                 # SQLiteAuthRepo implementasyonu + paket seviyesi wrapper'lar
+│   ├── blog_repo.go                 # SQLiteBlogRepo implementasyonu + paket seviyesi wrapper'lar
+│   └── photo_repo.go                # Dosya yükleme yardımcıları (UploadPhoto, DeletePhoto)
 ├── models/
-│   ├── person.go                    # Person entity'si ve DTO'ları
-│   └── blog.go                      # Blog entity'si ve DTO'ları
-├── queries/
-│   └── queries.go                   # Merkezi SQL sorgu sabitleri
-├── db/
-│   └── db.go                        # SQLite bağlantısı ve tablo kurulumu
+│   ├── person.go                    # Person, CreatePersonRequest, PersonResponse, LoginRequest, TokenResponse
+│   └── blog.go                      # Blog, CreateBlogRequest, UpdateBlogRequest, BlogResponse, Role
 ├── shared/
-│   ├── auth.go                      # JWT parse (dışa açık)
-│   ├── config.go                    # Ortam değişkeni tabanlı yapılandırma
-│   ├── cors.go                      # CORS middleware
-│   ├── errors.go                    # CustomError sistemi, HTTP helper'lar, uygulama loglama
-│   ├── logging.go                   # HTTP istek loglama middleware
-│   ├── validation.go                # Girdi doğrulama katmanı
-│   ├── rate_limiter.go              # IP bazlı rate limiting
-│   └── web_helpers.go               # TemplateData yapısı ve GetTemplateData
+│   ├── auth.go                      # JWT üretimi ve doğrulaması (ParseAccessToken)
+│   ├── config.go                    # Config struct ve environment variable okuma
+│   ├── cors.go                      # CorsMiddleware
+│   ├── errors.go                    # CustomError, ErrorType, hata yardımcıları
+│   ├── errors_test.go               # CustomError testleri
+│   ├── logging.go                   # LogInfo, LogError, LoggingMiddleware (JSON format)
+│   ├── rate_limiter.go              # IP tabanlı fixed-window RateLimiter
+│   ├── rate_limiter_test.go         # RateLimiter testleri
+│   ├── validation.go                # Validator: email, şifre, isim, yaş, telefon doğrulama
+│   ├── validation_test.go           # Validator testleri
+│   └── web_helpers.go               # TemplateData, GetTemplateData (cookie → JWT → kullanıcı)
+├── db/
+│   └── db.go                        # db.Init(), global db.DB, tablo şemaları
+├── queries/
+│   └── queries.go                   # Tüm SQL sorguları sabit olarak
+├── docs/
+│   ├── docs.go                      # Swagger otomatik üretilen doküman
+│   ├── swagger.json
+│   └── swagger.yaml
 ├── tests/
 │   └── integration/
-│       ├── setup_test.go            # TestMain: in-memory SQLite + httptest.Server kurulumu
-│       ├── health_test.go           # GET /api/health uçtan uca testi
-│       └── auth_test.go             # Register, Login, korumalı endpoint uçtan uca testleri
-├── templates/
-│   ├── layout.html                  # Tüm sayfaların temel şablonu (navbar, alert'ler)
-│   ├── home.html                    # Yayınlanmış blog'ların gösterildiği ana sayfa
-│   ├── login.html                   # Giriş formu
-│   ├── register.html                # Kayıt formu
-│   ├── admin.html                   # Admin paneli (kullanıcı listesi + blog yönetimi bağlantısı)
-│   ├── editor.html                  # Editor paneli (kendi blog'larını yönetir)
-│   └── blog.html                    # Blog yönetim sayfası (admin + editor)
-├── static/
-│   ├── css/style.css                # Özel stiller
-│   └── js/app.js                    # Kullanıcı silme ve düzenleme JS fonksiyonları
-├── uploads/                         # Yüklenen fotoğraflar (çalışma zamanında oluşur)
-├── docs/                            # Swagger tarafından otomatik üretilen dosyalar
-├── people.db                        # SQLite veritabanı dosyası
-└── app.log                          # Uygulama log dosyası
+│       ├── setup_test.go            # Test sunucusu kurulumu
+│       ├── auth_test.go             # Login/Refresh/Logout entegrasyon testleri
+│       └── health_test.go           # /api/health endpoint testi
+└── static/                          # CSS, JS, görseller
+    └── uploads/                     # Yüklenen kullanıcı fotoğrafları ve blog görselleri
 ```
 
 ---
 
-## 3. Veritabanı Katmanı (`db/db.go`)
+## 3. Mimari: 3 Katmanlı Yapı
 
-`Init()` fonksiyonu uygulama başlarken çağrılır ve üç tabloyu `CREATE TABLE IF NOT EXISTS` ile oluşturur.
+```
+HTTP İsteği
+    ↓
+[Handlers] — HTTP parse, auth kontrol, response yazma
+    ↓  ctx = r.Context() ile geçirilir
+[Services] — İş mantığı, yetkilendirme kararları
+    ↓  ctx iletilir
+[Repositories] — QueryContext/ExecContext ile DB sorguları
+    ↓
+[SQLite DB]
+```
 
-### 3.1. `people` tablosu
+### context.Context Akışı
 
-| Sütun | Tip | Özellik |
-|---|---|---|
-| id | INTEGER | PRIMARY KEY AUTOINCREMENT |
-| name | TEXT | NOT NULL |
-| surname | TEXT | — |
-| email | TEXT | NOT NULL UNIQUE |
-| age | INTEGER | — |
-| phone | TEXT | — |
-| photo_path | TEXT | Yüklenen fotoğrafın URL yolu |
-| role | TEXT | NOT NULL DEFAULT 'editor' |
-| password_hash | TEXT | NOT NULL — bcrypt hash |
+Her HTTP isteğinde `r.Context()` handler'dan başlayarak servis ve repository katmanlarına iletilir. Bu sayede:
+- İstemci bağlantıyı kestiğinde devam eden DB sorguları iptal edilir
+- Timeout ayarlanabilir
+- Request-scoped değerler taşınabilir
 
-Email kolonu **UNIQUE** olduğundan aynı e-posta ile birden fazla kayıt hem kod hem de veritabanı seviyesinde engellenir.
-
-### 3.2. `refresh_tokens` tablosu
-
-| Sütun | Tip | Özellik |
-|---|---|---|
-| id | INTEGER | PRIMARY KEY AUTOINCREMENT |
-| user_id | INTEGER | NOT NULL |
-| token | TEXT | NOT NULL UNIQUE |
-| revoked | INTEGER | NOT NULL DEFAULT 0 |
-| created_at | TEXT | NOT NULL |
-| revoked_at | TEXT | — (logout anında set edilir) |
-
-### 3.3. `blogs` tablosu
-
-| Sütun | Tip | Özellik |
-|---|---|---|
-| id | INTEGER | PRIMARY KEY AUTOINCREMENT |
-| title | TEXT | NOT NULL |
-| content | TEXT | NOT NULL |
-| summary | TEXT | — |
-| image_path | TEXT | Yüklenen görselin URL yolu |
-| author_id | INTEGER | NOT NULL, FOREIGN KEY → people(id) |
-| author_name | TEXT | NOT NULL |
-| published | INTEGER | NOT NULL DEFAULT 0 (0=taslak, 1=yayında) |
-| created_at | TEXT | NOT NULL |
-| updated_at | TEXT | NOT NULL |
+DB'ye dokunan tüm methodlar `ctx context.Context` alır. Sadece JWT işlemi yapan methodlar (`GenerateAccessToken`, `ParseRefreshToken`) ctx almaz çünkü bunlar DB'ye dokunmaz.
 
 ---
 
-## 4. Model Katmanı
+## 4. Veri Modelleri
 
-### 4.1. `models/person.go`
+### Person
 
-**`Person`** — Veritabanı entity'si:
-- `ID`, `Name`, `Surname`, `Email`, `Age`, `Phone`, `PhotoPath`, `Role`
-- `PasswordHash string json:"-"` — JSON serialization'dan gizlenir, yalnızca DB'de taşınır
-
-**`CreatePersonRequest`** — Yeni kullanıcı oluşturma DTO'su:
-- `Name`, `Surname`, `Email`, `Age`, `Phone`, `PhotoPath`, `Role`, `Password` (düz metin)
-
-**`PersonResponse`** — Dışa döndürülen DTO:
-- `ID`, `Name`, `Surname`, `Email`, `Age`, `Phone`, `PhotoPath`, `Role`
-- Şifre bilgisi içermez
-
-**`LoginRequest`** — Giriş DTO'su: `Email`, `Password`
-
-**`TokenResponse`** — Token yanıt DTO'su: `AccessToken`, `RefreshToken`
-
-**`RefreshTokenRequest`** — Token yenileme DTO'su: `RefreshToken`
-
-Yardımcı fonksiyonlar:
-- `ToPersonResponse(p Person) PersonResponse` — tek dönüşüm
-- `ToPersonResponseList(people []Person) []PersonResponse` — liste dönüşümü
-
----
-
-### 4.2. `models/blog.go`
-
-**`Blog`** — Veritabanı entity'si:
-- `ID`, `Title`, `Content`, `Summary`, `ImagePath`
-- `AuthorID int`, `AuthorName string`
-- `Published bool`
-- `CreatedAt time.Time`, `UpdatedAt time.Time`
-
-**`CreateBlogRequest`** — Blog oluşturma DTO'su: `Title`, `Content`, `Summary`, `ImagePath`, `Published`
-
-**`UpdateBlogRequest`** — Blog güncelleme DTO'su: yukarıdakine ek `ID`
-
-**`BlogResponse`** — Dışa döndürülen DTO (Blog ile birebir aynı yapı)
-
-Yardımcı fonksiyonlar:
-- `ToBlogResponse(blog Blog) BlogResponse`
-- `ToBlogResponseList(blogs []Blog) []BlogResponse`
-
----
-
-## 5. Yapılandırma Katmanı (`shared/config.go`)
-
-Tüm yapılandırma ortam değişkenlerinden okunur. Değişken tanımlı değilse varsayılan değer kullanılır.
-
-| Ortam Değişkeni | Varsayılan | Açıklama |
-|---|---|---|
-| JWT_ACCESS_SECRET | `super-secret-access-key` | Access token imzalama anahtarı |
-| JWT_REFRESH_SECRET | `super-secret-refresh-key` | Refresh token imzalama anahtarı |
-| ACCESS_TOKEN_TTL | `900` (15 dakika) | Access token geçerlilik süresi (saniye) |
-| REFRESH_TOKEN_TTL | `604800` (7 gün) | Refresh token geçerlilik süresi (saniye) |
-| SERVER_PORT | `:8081` | Sunucu portu |
-| DB_PATH | `people.db` | SQLite veritabanı dosya yolu |
-| ENVIRONMENT | `development` | Ortam tipi |
-
-**Production güvenlik koruması:** `ENVIRONMENT=production` iken JWT secret'ları varsayılan değerlerde bırakılırsa uygulama başlamaz ve panic verir.
-
----
-
-## 6. Kimlik Doğrulama (`shared/auth.go` + `service/auth_service.go` + `handlers/auth_handler.go`)
-
-### 6.1. JWT Yapısı
-
-`shared/auth.go`'da `jwtClaims` (unexported):
 ```go
-type jwtClaims struct {
-    UserID int `json:"userId"`
-    jwt.RegisteredClaims
+// İç model — PasswordHash asla JSON'a sızmaz
+type Person struct {
+    ID           int    `json:"id"`
+    Name         string `json:"name"`
+    Surname      string `json:"surname"`
+    Email        string `json:"email"`
+    Age          int    `json:"age"`
+    Phone        string `json:"phone"`
+    PhotoPath    string `json:"photoPath"`
+    Role         string `json:"role"`
+    PasswordHash string `json:"-"`
+}
+
+// API giriş DTO
+type CreatePersonRequest struct {
+    Name      string `json:"name"`
+    Surname   string `json:"surname"`
+    Email     string `json:"email"`
+    Age       int    `json:"age"`
+    Phone     string `json:"phone"`
+    PhotoPath string `json:"photoPath"`
+    Role      string `json:"role"`
+    Password  string `json:"password"` // Hash'lenerek saklanır
+}
+
+// API çıkış DTO — şifre hash'i içermez
+type PersonResponse struct {
+    ID        int    `json:"id"`
+    Name      string `json:"name"`
+    Surname   string `json:"surname"`
+    Email     string `json:"email"`
+    Age       int    `json:"age"`
+    Phone     string `json:"phone"`
+    PhotoPath string `json:"photoPath"`
+    Role      string `json:"role"`
+}
+
+type LoginRequest struct {
+    Email    string `json:"email"`
+    Password string `json:"password"`
+}
+
+type TokenResponse struct {
+    AccessToken  string `json:"accessToken"`
+    RefreshToken string `json:"refreshToken"`
+}
+
+type RefreshTokenRequest struct {
+    RefreshToken string `json:"refreshToken"`
 }
 ```
 
-`service/auth_service.go`'da `authClaims` (aynı yapı, refresh token parse için):
+### Blog
+
 ```go
-type authClaims struct {
-    UserID int `json:"userId"`
-    jwt.RegisteredClaims
+type Role string
+const (
+    RoleAdmin  Role = "admin"
+    RoleEditor Role = "editor"
+)
+
+type Blog struct {
+    ID         int       `json:"id"`
+    Title      string    `json:"title"`
+    Content    string    `json:"content"`
+    Summary    string    `json:"summary"`
+    ImagePath  string    `json:"imagePath"`
+    AuthorID   int       `json:"authorId"`
+    AuthorName string    `json:"authorName"`
+    Published  bool      `json:"published"`
+    CreatedAt  time.Time `json:"createdAt"`
+    UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+type BlogResponse struct { /* Blog ile aynı alanlar */ }
+```
+
+---
+
+## 5. Arayüzler (Interfaces)
+
+### Repository Katmanı (`repository/interfaces.go`)
+
+```go
+type PersonRepository interface {
+    AddPerson(ctx context.Context, p models.Person) (int64, error)
+    GetAllPeople(ctx context.Context) ([]models.Person, error)
+    GetPersonByID(ctx context.Context, id int) (models.Person, error)
+    GetPersonByEmail(ctx context.Context, email string) (models.Person, error)
+    EmailExists(ctx context.Context, email string) (bool, error)
+    DeletePerson(ctx context.Context, id int) error
+    UpdatePerson(ctx context.Context, p models.Person) error
+}
+
+type AuthRepository interface {
+    SaveRefreshToken(ctx context.Context, userID int, token string) error
+    IsRefreshTokenValid(ctx context.Context, token string) (bool, error)
+    RevokeRefreshToken(ctx context.Context, token string) error
+}
+
+type BlogRepository interface {
+    CreateBlog(ctx context.Context, blog models.Blog) (int64, error)
+    GetAllBlogs(ctx context.Context) ([]models.Blog, error)
+    GetPublishedBlogs(ctx context.Context) ([]models.Blog, error)
+    GetBlogByID(ctx context.Context, id int) (models.Blog, error)
+    GetBlogsByAuthor(ctx context.Context, authorID int) ([]models.Blog, error)
+    UpdateBlog(ctx context.Context, blog models.Blog) error
+    DeleteBlog(ctx context.Context, id int) error
+    UpdateBlogPublishStatus(ctx context.Context, id int, published bool) error
 }
 ```
 
-`RegisteredClaims` aracılığıyla `ExpiresAt` ve `IssuedAt` alanları otomatik yönetilir.
+### Servis Katmanı (`service/interfaces.go`)
 
-### 6.2. AuthService (`service/auth_service.go`)
+```go
+type AuthService interface {
+    Login(ctx context.Context, email, password string) (models.Person, error)
+    GenerateAccessToken(userID int) (string, error)                             // DB yok → ctx yok
+    GenerateRefreshToken(ctx context.Context, userID int) (string, error)
+    IsRefreshTokenValid(ctx context.Context, token string) (bool, error)
+    ParseRefreshToken(token string) (int, error)                                // DB yok → ctx yok
+    RevokeRefreshToken(ctx context.Context, token string) error
+}
 
-Token üretimi ve kimlik doğrulama iş mantığı `authService` struct'ında toplanmıştır:
+type BlogService interface {
+    GetBlogsForUser(ctx context.Context, userRole string, userID int) ([]models.Blog, error)
+    CreateBlog(ctx context.Context, title, content, summary, imagePath string, published bool, authorID int, authorName string) (int64, error)
+    UpdateBlog(ctx context.Context, blogID int, title, content, summary, imagePath string, published bool, userRole string, userID int) error
+    DeleteBlog(ctx context.Context, blogID int, userRole string, userID int) error
+}
 
-| Metod | Açıklama |
-|---|---|
-| `Login(email, password)` | Kullanıcıyı DB'den çeker, bcrypt ile şifreyi doğrular |
-| `GenerateAccessToken(userID)` | Kısa ömürlü access token üretir (varsayılan 15 dk) |
-| `GenerateRefreshToken(userID)` | Uzun ömürlü refresh token üretir, DB'ye kaydeder (varsayılan 7 gün) |
-| `IsRefreshTokenValid(token)` | Token'ın DB'de geçerli olup olmadığını kontrol eder |
-| `ParseRefreshToken(token)` | Refresh JWT'yi doğrular, userID döner |
-| `RevokeRefreshToken(token)` | Token'ı geçersiz kılar |
+type PersonService interface {
+    UpdatePerson(ctx context.Context, req UpdatePersonRequest) error
+}
 
-JWT secret'ları ve TTL değerleri `NewAuthService()` constructorında bir kez okunur, struct field'larında saklanır.
+// Strategy Pattern arayüzü
+type AuthorizationStrategy interface {
+    IsAuthorized(userRole string, userID int, resourceOwnerID int) bool
+}
+```
 
-### 6.3. Token Doğrulaması
+### Handler Katmanı
 
-- `shared.ParseAccessToken(tokenStr)` — dışa açık, web handler'lar ve middleware tarafından cookie/header'dan token okumak için kullanılır
-- `authService.ParseRefreshToken(token)` — yalnızca refresh endpoint'inde kullanılır
+```go
+// Template Method Pattern arayüzü (handlers/page_renderer.go)
+type PageRenderer interface {
+    RequiresAuth() bool
+    Title() string
+    TemplateName() string
+    LoadData(ctx context.Context, data *shared.TemplateData, userID int) error
+}
 
-### 6.4. İki Farklı Auth Mekanizması
-
-| Mekanizma | Kullanım Yeri | Detay |
-|---|---|---|
-| Cookie (`auth_token`) | Web UI | HttpOnly cookie, 1 saatlik access token |
-| Bearer Token | REST API (`/api/*`) | `Authorization: Bearer <token>` header'ı |
-
-### 6.5. `JwtAuthMiddleware`
-
-API endpoint'leri için JWT doğrulama middleware'i:
-1. `Authorization` header'ı okunur
-2. `Bearer <token>` formatı kontrol edilir
-3. `ParseAccessToken` ile doğrulanır
-4. Hata varsa `401 Unauthorized` döner
-5. Geçerliyse `userID` context'e eklenir (`userIDContextKey`) ve `next` handler çağrılır
+// Chain of Responsibility Pattern arayüzü (handlers/registration_pipeline.go)
+type RegistrationHandler interface {
+    SetNext(RegistrationHandler) RegistrationHandler
+    Handle(ctx context.Context, regCtx *registrationContext, repo repository.PersonRepository) error
+}
+```
 
 ---
 
----
+## 6. Tasarım Desenleri
 
-## 7. Uygulanan Tasarım Desenleri
+### A. Builder Pattern — `routes/app_builder.go`
 
-Proje; öğrenme amacıyla seçilmiş ve gerçek sorunları çözmek üzere uygulanmış beş tasarım deseni içerir.
+Tüm bağımlılıkların inşasını merkezi bir yapıda toplar. Fluent interface ile konfigürasyon yapılır.
 
-### 7.1. Chain of Responsibility — `handlers/registration_pipeline.go`
+```go
+// Kullanım
+builder := routes.NewAppBuilder(db.DB).
+    WithLoginRateLimit(10, time.Minute)
+builder.Build()
 
-**Sorun:** Kayıt akışı düz bir `[]func` slice'ıydı; yeni adım eklemek zinciri manuel yönetmeyi gerektiriyordu.
+// İç akış
+func (b *AppBuilder) Build() {
+    repos    := b.buildRepos()    // repo'lar oluşturulur
+    services := b.buildServices() // repo'lar inject edilir
+    handlers := b.buildHandlers() // service'ler inject edilir
+    b.registerRoutes(handlers)    // handler'lar route'lara bağlanır
+}
+```
 
-**Çözüm:** Her adım `RegistrationHandler` interface'ini implemente eden bir struct'tır. `SetNext()` ile zincir kurulur. Bir adım hata verirse sonrakiler çalışmaz.
+### B. Chain of Responsibility Pattern — `handlers/registration_pipeline.go`
+
+Kayıt akışı her biri tek sorumluluk üstlenen handler zinciriyle yürütülür. Herhangi bir adım hata dönerse zincir durur.
 
 ```
 EmailCheckHandler → PersonBuildHandler → PersonSaveHandler
 ```
 
 ```go
-emailCheck := &EmailCheckHandler{}
-emailCheck.SetNext(personBuild).SetNext(personSave)
-chain.Handle(ctx, repo)
-```
-
-**Yeni adım ekleme:** Yalnızca yeni bir struct yaz ve zincire bağla — mevcut koda dokunma.
-
----
-
-### 7.2. Strategy Pattern — `service/authorization.go`
-
-**Sorun:** Blog güncelleme ve silmede `if userRole != "admin" && blog.AuthorID != userID` kontrolü tekrar ediyordu; farklı iş kuralı gerektirse hardcoded değişmeliydi.
-
-**Çözüm:** `AuthorizationStrategy` interface'i ile yetki kuralı `blogService`'e enjekte edilir.
-
-| Strateji | Kural |
-|---|---|
-| `AdminOnlyStrategy` | Yalnızca `admin` rolü |
-| `OwnerOrAdminStrategy` | Kaynak sahibi veya `admin` (varsayılan) |
-
-```go
-// Test: farklı strateji enjekte et
-svc := service.NewBlogServiceWithStrategy(repo, &AdminOnlyStrategy{})
-```
-
----
-
-### 7.3. Template Method Pattern — `handlers/page_renderer.go`
-
-**Sorun:** `BlogPageHandler`, `EditorPageHandler`, `AdminPageHandler`, `HomeHandler` hepsinde aynı iskelet tekrar ediyordu: `GetTemplateData → auth kontrolü → token parse → data yükle → renderTemplate`.
-
-**Çözüm:** `RenderPage()` sabit iskeleti tanımlar. Değişen kısım `PageRenderer` interface'i üzerinden sağlanır.
-
-```go
-type PageRenderer interface {
-    RequiresAuth() bool
-    Title() string
-    TemplateName() string
-    LoadData(data *shared.TemplateData, userID int) error
-}
-```
-
-Her sayfa yalnızca `LoadData()` metodunu yazar; auth, token parse ve render tekrar yazılmaz.
-
----
-
-### 7.4. Repository Pattern (DB Injection) — `repository/`
-
-**Sorun:** Tüm repo metodları global `db.DB` değişkenine doğrudan erişiyordu; test için mock DB enjekte etmek imkânsızdı.
-
-**Çözüm:** Her repo struct'ına `db *sql.DB` alanı eklendi; constructor `*sql.DB` parametre alır.
-
-```go
-// Önce:
-type SQLitePersonRepo struct{}
-func NewPersonRepo() PersonRepository { return &SQLitePersonRepo{} }
-
-// Sonra:
-type SQLitePersonRepo struct { db *sql.DB }
-func NewPersonRepo(database *sql.DB) PersonRepository {
-    return &SQLitePersonRepo{db: database}
-}
-```
-
-`repository.SetDB(db.DB)` — `shared/web_helpers.go` gibi paket düzeyinde wrapper kullanan yerler için geriye dönük uyumluluk sağlar.
-
----
-
-### 7.5. Builder Pattern — `routes/app_builder.go`
-
-**Sorun:** `RegisterRoutes()` içinde 10+ nesne düz sırayla oluşturuluyordu; bağımlılık grafiği tek bir fonksiyona sıkışmıştı.
-
-**Çözüm:** `AppBuilder` adımları açık metotlara ayırır. Zincirleme yapılandırma desteklenir.
-
-```go
-// Varsayılan kullanım:
-NewAppBuilder(db.DB).Build()
-
-// Özelleştirilmiş kullanım:
-NewAppBuilder(db.DB).
-    WithLoginRateLimit(5, time.Minute).
-    Build()
-```
-
-İç adımlar: `buildRepos() → buildServices() → buildHandlers() → registerRoutes()`
-
-`RoleChecker` da bu değişiklikle birlikte struct'a dönüştürüldü: artık `PersonRepository` enjekte alır, global wrapper fonksiyon kullanmaz.
-
----
-
-## 8. Rol Tabanlı Erişim Kontrolü (`handlers/role_middleware.go`)
-
-Proje iki rol destekler:
-
-| Rol | Erişim |
-|---|---|
-| `admin` | Tüm sayfalar: kullanıcı listesi, kullanıcı ekleme/düzenleme/silme, tüm blog'lar |
-| `editor` | Yalnızca kendi blog'ları: ekleme, düzenleme, silme |
-
-### RoleChecker Struct'ı
-
-Builder Pattern ile birlikte `RoleChecker` struct'a dönüştürüldü; `PersonRepository` enjekte alır.
-
-```go
-roles := handlers.NewRoleChecker(personRepo)
-
-// Route kaydında:
-http.HandleFunc("/admin", roles.AdminMiddleware(webH.AdminPageHandler))
-http.HandleFunc("/blogs", roles.EditorMiddleware(blogH.BlogPageHandler))
-```
-
-| Metot | İzin verilen roller |
-|---|---|
-| `roles.Middleware(allowedRoles...)` | Genel rol kontrolü |
-| `roles.AdminMiddleware(next)` | Yalnızca `admin` |
-| `roles.EditorMiddleware(next)` | `admin` + `editor` |
-
-`Middleware` akışı:
-1. `auth_token` cookie'si okunur → yoksa `/login`'e yönlendir
-2. Token parse edilir → geçersizse `/login`'e yönlendir
-3. Enjekte edilen `personRepo.GetPersonByID` ile kullanıcı alınır
-4. Rol listesinde var mı kontrol edilir → yoksa `403 Forbidden`
-
----
-
-## 8. Mimari: Katmanlı Yapı ve Dependency Injection
-
-### 8.1. Katmanlar
-
-```
-Handler  →  Service  →  Repository  →  DB
-```
-
-Her katman bir üst katmanın **interface**'ini kullanır, concrete implementasyona bağımlı değildir.
-
-### 8.2. Interface'ler
-
-**`repository/interfaces.go`** — DB bağımsızlığı sağlar:
-- `AuthRepository` — token CRUD
-- `BlogRepository` — blog CRUD
-- `PersonRepository` — kişi CRUD
-
-**`service/interfaces.go`** — İş mantığı bağımsızlığı sağlar:
-- `AuthService` — kimlik doğrulama + token yönetimi
-- `BlogService` — blog iş kuralları (yetki kontrolü dahil)
-- `PersonService` — kişi güncelleme iş kuralları
-
-### 8.3. Implementasyonlar
-
-| Interface | SQLite Implementasyonu |
-|---|---|
-| `AuthRepository` | `SQLiteAuthRepo` |
-| `BlogRepository` | `SQLiteBlogRepo` |
-| `PersonRepository` | `SQLitePersonRepo` |
-
-Her implementasyon için `NewXxxRepo(db *sql.DB)` constructor'ı vardır ve dönüş tipi interface'tir (concrete tip sızdırmaz). Constructor'lar `*sql.DB` parametre alır; global `db.DB`'ye bağımlılık yoktur.
-
-`shared/web_helpers.go` gibi inject almayan çağrılar için **paket düzeyinde wrapper fonksiyonlar** korunur; bunlar `repository.SetDB(db.DB)` ile başlatılan varsayılan örneklere delege eder.
-
-### 8.4. Handler Struct'ları
-
-| Struct | Bağımlılıklar |
-|---|---|
-| `AuthHandler` | `AuthService` |
-| `BlogHandler` | `BlogService` |
-| `PersonHandler` | `PersonRepository` |
-| `WebHandler` | `AuthService` + `PersonRepository` + `BlogRepository` + `PersonService` |
-
-### 8.5. Wire (Bağlama) — `routes/app_builder.go`
-
-Builder Pattern ile bağımlılık grafiği `AppBuilder` içinde kapsüllendi. `routes.go` tek satıra indi:
-
-```go
-// routes/routes.go
-func RegisterRoutes() {
-    NewAppBuilder(db.DB).Build()
+// Zincir kurulumu
+func NewRegistrationChain() RegistrationHandler {
+    emailCheck  := &EmailCheckHandler{}
+    personBuild := &PersonBuildHandler{}
+    personSave  := &PersonSaveHandler{}
+    emailCheck.SetNext(personBuild).SetNext(personSave)
+    return emailCheck
 }
 
-// Özelleştirilmiş yapılandırma:
-NewAppBuilder(db.DB).WithLoginRateLimit(5, time.Minute).Build()
+// Her handler ctx'i bir sonrakine iletir
+func (h *EmailCheckHandler) Handle(ctx context.Context, regCtx *registrationContext, repo repository.PersonRepository) error {
+    exists, err := repo.EmailExists(ctx, regCtx.Req.Email)
+    if err != nil { return err }
+    if exists    { return errEmailAlreadyExists }
+    return h.handleNext(ctx, regCtx, repo) // bir sonraki handler
+}
 ```
-
-Builder iç adımları:
-
-```go
-repos := b.buildRepos()      // NewAuthRepo(db), NewBlogRepo(db), NewPersonRepo(db)
-svcs  := b.buildServices()   // NewAuthService, NewBlogService, NewPersonService
-h     := b.buildHandlers()   // NewAuthHandler, BlogHandler, PersonHandler, WebHandler, RoleChecker
-b.registerRoutes(h)          // http.HandleFunc kayıtları
-```
-
-### 8.6. PostgreSQL'e Geçiş
-
-Tüm DB değişikliği sadece 3 satır — handler, service ve shared paketi dokunulmaz:
-
-```go
-authRepo   := repository.NewPostgresAuthRepo(db)
-blogRepo   := repository.NewPostgresBlogRepo(db)
-personRepo := repository.NewPostgresPersonRepo(db)
-```
-
----
-
-## 9. Route Haritası (`routes/routes.go`)
-
-### Web Form İşlemleri
-
-| Method | URL | Handler | Koruma |
-|---|---|---|---|
-| POST | `/web-login` | `WebLoginHandler` | Herkese açık |
-| POST | `/web-register` | `WebRegisterHandler` | Herkese açık |
-| GET | `/web-logout` | `WebLogoutHandler` | Herkese açık |
-| POST | `/user/update` | `UpdateUserHandler` | Admin |
-| GET | `/web-delete` | `WebDeletePersonHandler` | Admin |
-
-### Blog İşlemleri
-
-| Method | URL | Handler | Koruma |
-|---|---|---|---|
-| POST | `/blog/create` | `CreateBlogHandler` | Editor + Admin |
-| POST | `/blog/update` | `UpdateBlogHandler` | Editor + Admin |
-| GET | `/blog/delete` | `DeleteBlogHandler` | Editor + Admin |
-
-### Statik Dosyalar
-
-| URL | Açıklama |
-|---|---|
-| `/static/*` | CSS, JS dosyaları |
-| `/uploads/*` | Yüklenen fotoğraflar |
-
-### REST API Endpoint'leri
-
-| Method | URL | Handler | Koruma |
-|---|---|---|---|
-| POST | `/api/login` | `LoginHandler` | Herkese açık |
-| POST | `/api/refresh` | `RefreshHandler` | Herkese açık |
-| POST | `/api/logout` | `LogoutHandler` | JWT |
-| GET | `/api/health` | `HealthHandler` | Herkese açık |
-| POST | `/api/add` | `AddPersonHandler` | Herkese açık |
-| GET | `/api/all` | `GetAllPeopleHandler` | JWT |
-| GET | `/api/get` | `GetPersonByIDHandler` | JWT |
-| GET | `/api/delete` | `DeletePersonHandler` | JWT |
-
-### Web Sayfaları
-
-| URL | Handler | Koruma | Açıklama |
-|---|---|---|---|
-| `/` | `HomeHandler` | Herkese açık | Yayınlanmış blog'lar |
-| `/login` | `LoginPageHandler` | Herkese açık | Giriş formu |
-| `/register` | `RegisterPageHandler` | Herkese açık | Kayıt formu |
-| `/admin` | `AdminPageHandler` | Admin | Kullanıcı yönetimi |
-| `/editor` | `EditorPageHandler` | Editor + Admin | Kendi blog'larını yönetir |
-| `/blogs` | `BlogPageHandler` | Editor + Admin | Blog yönetim sayfası |
-| `/swagger/` | Swagger UI | Herkese açık | API dokümantasyonu |
-| `/debug/pprof/` | pprof UI | Herkese açık* | Profiling ve monitoring |
-
-> *pprof endpoint'i teknik olarak koruma altında değildir. Production'a taşınırsa `AdminMiddleware` ile korunması önerilir.
-
----
-
-## 10. Handler Katmanı
-
-### 10.1. Kayıt Pipeline'ı (`registration_pipeline.go`)
-
-Kayıt işlemi **Chain of Responsibility** deseniyle üç handler'dan oluşan bir zincirle gerçekleşir:
 
 | Handler | Sorumluluk |
 |---|---|
-| `EmailCheckHandler` | Email daha önce kullanıldı mı? |
-| `PersonBuildHandler` | Şifreyi bcrypt ile hashle, `Person` modelini oluştur |
-| `PersonSaveHandler` | Veritabanına kaydet, oluşan `ID`'yi context'e yaz |
+| `EmailCheckHandler` | Email daha önce kayıtlı mı? |
+| `PersonBuildHandler` | Şifreyi bcrypt'le hash'le, Person struct'ı oluştur |
+| `PersonSaveHandler` | Kişiyi DB'ye kaydet, dönen ID'yi set et |
+
+### C. Strategy Pattern — `service/authorization.go`
+
+Yetkilendirme kararı, runtime'da değiştirilebilir bir strateji nesnesine delege edilir.
 
 ```go
-// Zincir kurulumu (NewRegistrationChain içinde):
-emailCheck.SetNext(personBuild).SetNext(personSave)
-```
+type AuthorizationStrategy interface {
+    IsAuthorized(userRole string, userID int, resourceOwnerID int) bool
+}
 
-- `SetNext()` eklenen handler'ı döner → zincirleme mümkündür
-- Herhangi bir adım hata verirse sonraki handler'lar çalışmaz
-- Yeni adım eklemek mevcut koda dokunmayı gerektirmez
+// Sadece admin yetkilidir
+type AdminOnlyStrategy struct{}
+func (s *AdminOnlyStrategy) IsAuthorized(userRole string, _ int, _ int) bool {
+    return userRole == string(models.RoleAdmin)
+}
 
-### 10.2. Sayfa Handler'ları — Template Method Pattern
-
-`home.html`, `admin.html`, `blog.html` ve `editor.html` sayfaları **Template Method** iskeletiyle render edilir. `RenderPage()` sabit adımları yönetir; her sayfa yalnızca `LoadData()` yazar:
-
-```go
-type PageRenderer interface {
-    RequiresAuth() bool        // auth kontrolü yapılsın mı?
-    Title() string             // <title> ve data.Title
-    TemplateName() string      // render edilecek .html dosyası
-    LoadData(*TemplateData, userID int) error  // sayfaya özgü iş mantığı
+// Admin veya kaynağın sahibi yetkilidir
+type OwnerOrAdminStrategy struct{}
+func (s *OwnerOrAdminStrategy) IsAuthorized(userRole string, userID int, resourceOwnerID int) bool {
+    return userRole == string(models.RoleAdmin) || userID == resourceOwnerID
 }
 ```
 
-| PageRenderer | Sayfa | Auth |
-|---|---|---|
-| `homePageRenderer` | `home.html` | Hayır |
-| `adminPageRenderer` | `admin.html` | Evet |
-| `blogPageRenderer` | `blog.html` | Evet |
-| `editorPageRenderer` | `editor.html` | Evet |
+`blogService` içinde bu strateji field olarak tutulur ve `UpdateBlog`/`DeleteBlog` çağrılarında kullanılır.
 
-### 10.3. Web Handler'ları (`web_handler.go` — `WebHandler` struct)
+### D. Template Method Pattern — `handlers/page_renderer.go`
 
-**`WebLoginHandler` (POST /web-login)**
-1. Email ile kullanıcıyı bul
-2. bcrypt ile şifreyi doğrula
-3. Access token üret
-4. `auth_token` cookie'sini set et (HttpOnly, 1 saat)
-5. Role göre yönlendir: `editor` → `/editor`, diğerleri → `/admin`
-
-**`LoginPageHandler` / `RegisterPageHandler`**
-- Zaten giriş yapılmışsa role göre yönlendirir: `editor` → `/editor`, diğerleri → `/admin`
-
-**`WebRegisterHandler` (POST /web-register)**
-1. `ParseMultipartForm(32MB)` ile form'u parse et
-2. DTO'yu doldur ve validator'dan geçir
-3. Varsa fotoğrafı `uploads/` klasörüne yükle
-4. Kayıt pipeline'ını çalıştır
-5. Başarılıysa: giriş yapılmışsa `/admin`'e, yapılmamışsa `/login?registered=true`'ya yönlendir
-
-**`WebDeletePersonHandler` (GET /web-delete)**
-1. Query'den `id` al
-2. `DeletePerson(id)` çağır
-3. JSON `{"success": true}` yanıtı döndür (AJAX ile çağrılır, sayfa yenilenir)
-
-**`AdminPageHandler` (GET /admin)**
-1. Tüm kullanıcıları DB'den çek
-2. `TemplateData.Users`'a ata
-3. `admin.html` şablonunu render et
-
-### 10.4. Blog Handler'ları (`blog_handler.go` — `BlogHandler` struct)
-
-**`BlogPageHandler` (GET /blogs)**
-- Admin ise: tüm blog'ları getirir
-- Editor ise: yalnızca kendi blog'larını getirir (`GetBlogsByAuthor`)
-
-**`EditorPageHandler` (GET /editor)**
-- `BlogPageHandler` ile aynı mantık, `editor.html` şablonunu render eder
-
-**`CreateBlogHandler` (POST /blog/create)**
-1. Form parse et (multipart)
-2. Cookie'den token'ı parse ederek `AuthorID` ve `AuthorName` al
-3. Varsa görsel yükle
-4. Blog'u DB'ye kaydet
-5. Başarı cookie'si set edip `/blogs`'a yönlendir
-
-**`UpdateBlogHandler` (POST /blog/update)**
-1. `blog_id` ile mevcut blog'u çek
-2. Yetki kontrolü: admin her blog'u, editor yalnızca kendi blog'unu düzenleyebilir
-3. Yeni görsel varsa yükle ve eski görseli diskten sil, yoksa mevcut yolu koru
-4. Blog'u güncelle, `/blogs`'a yönlendir
-
-**`DeleteBlogHandler` (GET /blog/delete)**
-1. `id` ile blog'u bul
-2. Yetki kontrolü (admin her blog'u, editor yalnızca kendi blog'unu silebilir)
-3. Blog'u sil, `/blogs`'a yönlendir
-
-### 10.5. Auth API Handler'ları (`auth_handler.go` — `AuthHandler` struct)
-
-**`LoginHandler` (POST /api/login)** — Swagger dokümantasyonlu
-1. JSON body'den `LoginRequest` oku
-2. Email/şifre `ValidateRequired` ile doğrula
-3. `authSvc.Login` ile kimlik doğrula
-4. Access + refresh token üret
-5. `WriteSuccess` ile `TokenResponse` döndür
-
-**`RefreshHandler` (POST /api/refresh)**
-1. `refreshToken` oku ve DB'de geçerli olup olmadığını kontrol et
-2. JWT ile parse ederek `userID` al
-3. Yeni access token üret ve döndür
-
-**`LogoutHandler` (POST /api/logout)**
-1. Body'den refresh token oku
-2. DB'de geçerliliğini kontrol et
-3. DB'de token'ı revoke et (`revoked=1`, `revoked_at` set)
-
----
-
-## 11. Repository Katmanı
-
-### 11.1. `person_repo.go` — `SQLitePersonRepo`
-
-| Fonksiyon | Açıklama |
-|---|---|
-| `AddPerson(p Person)` | Yeni kullanıcı ekler |
-| `GetAllPeople()` | Tüm kullanıcıları listeler |
-| `GetPersonByID(id)` | ID'ye göre kullanıcı getirir |
-| `GetPersonByEmail(email)` | E-postaya göre kullanıcı getirir (login için) |
-| `EmailExists(email)` | E-postanın kayıtlı olup olmadığını kontrol eder |
-| `DeletePerson(id)` | ID'ye göre kullanıcı siler |
-| `UpdatePerson(p Person)` | Kullanıcı bilgilerini günceller |
-| `UploadPhoto(file, header)` | Fotoğrafı `uploads/` klasörüne kaydeder, URL yolunu döner |
-| `DeleteUploadedFile(urlPath)` | URL yoluyla belirtilen dosyayı diskten siler |
-
-`UploadPhoto` özellikleri:
-- Sadece `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp` uzantılarına izin verir
-- Rastgele 16 byte hex dosya adı üretir (çakışma engellenir)
-- `uploads/` klasörü yoksa otomatik oluşturur
-- Dosya yolunu `/uploads/filename.ext` formatında döner
-
-`DeleteUploadedFile` özellikleri:
-- `/uploads/...` formatındaki URL yolunu `uploads/...` dosya sistemi yoluna çevirir
-- Boş path veya bulunamayan dosya için sessizce devam eder (hata fırlatmaz)
-
-### 11.2. `blog_repo.go` — `SQLiteBlogRepo`
-
-| Fonksiyon | Açıklama |
-|---|---|
-| `CreateBlog(blog)` | Yeni blog oluşturur, `LastInsertId` döner |
-| `GetAllBlogs()` | Tüm blog'ları tarihe göre ters sırayla getirir |
-| `GetPublishedBlogs()` | Yalnızca `published=1` olan blog'ları getirir (ana sayfa için) |
-| `GetBlogByID(id)` | Tek blog getirir |
-| `GetBlogsByAuthor(authorID)` | Yazara ait blog'ları getirir |
-| `UpdateBlog(blog)` | Blog günceller |
-| `DeleteBlog(id)` | Blog siler |
-| `UpdateBlogPublishStatus(id, published)` | Yalnızca yayın durumunu günceller |
-
-`blog_repo.go` ayrıca `scanBlogRow` ve `parseTimeStr` yardımcı fonksiyonlarını içerir; SQLite'da metin olarak saklanan tarih alanlarını `time.Time`'a çevirir (RFC3339, `2006-01-02 15:04:05`, `2006-01-02T15:04:05Z` formatlarını destekler).
-
-### 11.3. `auth_repo.go` — `SQLiteAuthRepo`
-
-| Fonksiyon | Açıklama |
-|---|---|
-| `SaveRefreshToken(userID, token)` | Yeni refresh token'ı DB'ye kaydeder |
-| `IsRefreshTokenValid(token)` | Token'ın var ve revoke edilmemiş olup olmadığını kontrol eder |
-| `RevokeRefreshToken(token)` | Token'ı geçersiz kılar |
-
----
-
-## 12. Paylaşılan Altyapı (`shared/`)
-
-### 12.1. CORS Middleware (`cors.go`)
-
-- Her yanıta `Access-Control-Allow-Origin: *` ekler
-- İzin verilen metodlar: `GET, POST, PUT, DELETE, OPTIONS`
-- Preflight (`OPTIONS`) isteklerine `204 No Content` ile anında yanıt verir
-
-### 12.2. Rate Limiter (`rate_limiter.go`)
-
-IP başına sabit pencere (fixed window) sayacı ile istek sınırlandırma:
-
-- `NewRateLimiter(limit int, window time.Duration)` ile yapılandırılır
-- `sync.Mutex` kullanılarak thread-safe, dış bağımlılık yok
-- Süresi dolmuş kayıtlar arka planda periyodik olarak temizlenir
-- Reverse proxy arkasında çalışıyorsa `X-Forwarded-For` header'ından IP alınır, aksi hâlde `RemoteAddr` kullanılır
-- Limit aşıldığında `429 Too Many Requests` döner
-
-Şu an uygulandığı endpoint'ler (dakikada 10 istek / IP):
-
-| Endpoint | Açıklama |
-|---|---|
-| `POST /web-login` | Web form girişi |
-| `POST /api/login` | REST API girişi |
-
-### 12.3. Hata Yönetimi ve Uygulama Loglama (`errors.go`)
-
-#### Hata Tipleri
-
-`ErrorType` string sabitleri ile hataların kategorisi belirlenir:
-
-| Sabit | Değer | HTTP Kodu |
-|---|---|---|
-| `ErrorTypeValidation` | `"validation"` | 400 |
-| `ErrorTypeAuth` | `"auth"` | 401 |
-| `ErrorTypeNotFound` | `"not_found"` | 404 |
-| `ErrorTypePermission` | `"permission"` | 403 |
-| `ErrorTypeDatabase` | `"database"` | 500 |
-| `ErrorTypeInternal` | `"internal"` | 500 |
-
-#### `CustomError` Yapısı
+Sayfa render akışının iskeleti `RenderPage()` fonksiyonunda sabitlenmiştir. Her sayfa kendi `LoadData()` metodunu implement eder.
 
 ```go
-type CustomError struct {
-    Type    ErrorType              `json:"type"`
-    Message string                 `json:"message"`
-    Code    int                    `json:"code"`
-    Details map[string]interface{} `json:"details,omitempty"`
+// Sabit iskelet
+func RenderPage(w http.ResponseWriter, r *http.Request, renderer PageRenderer) {
+    ctx  := r.Context()
+    data := shared.GetTemplateData(r)
+
+    if renderer.RequiresAuth() && !data.IsAuthenticated {
+        http.Redirect(w, r, "/login", http.StatusSeeOther)
+        return
+    }
+
+    data.Title = renderer.Title()
+    // userID parse ...
+    renderer.LoadData(ctx, &data, userID)  // değişen kısım
+    renderTemplate(w, renderer.TemplateName(), data)
+}
+
+// Her sayfa LoadData'yı farklı implement eder
+type homePageRenderer struct{ blogRepo repository.BlogRepository }
+func (p *homePageRenderer) LoadData(ctx context.Context, data *shared.TemplateData, userID int) error {
+    blogs, err := p.blogRepo.GetPublishedBlogs(ctx)
+    data.Blogs = models.ToBlogResponseList(blogs)
+    return err
 }
 ```
 
-#### Constructor Fonksiyonları
-
-| Fonksiyon | Tip | HTTP Kodu |
+| Renderer | Şablon | Veri |
 |---|---|---|
-| `NewValidationError(message, details)` | validation | 400 |
-| `NewAuthError(message)` | auth | 401 |
-| `NewNotFoundError(message)` | not_found | 404 |
-| `NewPermissionError(message)` | permission | 403 |
-| `NewDatabaseError(message)` | database | 500 |
-| `NewInternalError(message)` | internal | 500 |
+| `homePageRenderer` | `home.html` | Yayınlanmış bloglar |
+| `adminPageRenderer` | `admin.html` | Tüm kullanıcılar |
+| `blogPageRenderer` | `blog.html` | Kullanıcıya göre bloglar |
+| `editorPageRenderer` | `editor.html` | Kullanıcıya göre bloglar |
 
-#### HTTP Helper Fonksiyonları
+### E. Repository Pattern — `repository/`
 
-| Fonksiyon | Açıklama |
-|---|---|
-| `WriteError(w, status, message, err)` | JSON hata yanıtı yazar, loga kaydeder |
-| `HandleError(w, err, status, message) bool` | `err != nil` ise `WriteError` çağırır ve `true` döner |
-| `HandleCustomError(w, *CustomError) bool` | `CustomError` tipinde hata işler, JSON yazar |
-| `WriteSuccess(w, message, data)` | `{"success": true, "message": ..., "data": ...}` JSON yanıtı yazar |
+Veritabanı işlemleri arayüz arkasına gizlenir. Test sırasında gerçek DB yerine mock repo kullanılabilir.
 
-#### Sabit Hata Mesajları
+```go
+// Üretim
+repo := repository.NewPersonRepo(db)
 
-Tüm sabit hata metinleri merkezi olarak tanımlanmıştır:
-- `ErrInvalidRequestBody`, `ErrEmailAlreadyExists`, `ErrPersonNotFound`
-- `ErrAuthHeaderRequired`, `ErrBearerTokenRequired`, `ErrInvalidOrExpiredToken`
-- `ErrAccessTokenGenerateFail`, `ErrRefreshTokenGenerateFail`, `ErrInvalidRefreshToken`
-- `ErrInvalidEmailFormat`, `ErrInvalidPassword`, `ErrInvalidName`, vb.
-
-#### Uygulama Loglama Fonksiyonları
-
-| Fonksiyon | Açıklama |
-|---|---|
-| `LogError(level, message, details)` | Hata seviyesinde log yazar |
-| `LogInfo(level, message, details)` | Bilgi seviyesinde log yazar |
-| `LogAuth(action, userID, details)` | Auth olaylarını yapılandırılmış olarak loglar |
-
-Her log girişi hem `log.Printf` (stdout) hem de `app.log` dosyasına JSON formatında yazılır.
-
-### 12.4. HTTP İstek Loglama Middleware (`logging.go`)
-
-`loggingResponseWriter` wrapper'ı ile her HTTP isteği için şunları loglar:
-
-```
-http request: method=POST path=/web-login status=302 duration=45ms bytes=0
+// Test
+repo := &mockPersonRepo{emailExists: false, addPersonID: 42}
 ```
 
-### 12.5. Doğrulama Katmanı (`validation.go`)
+### F. Dependency Injection — `routes/app_builder.go`
 
-`Validator` struct ile zincir (builder) halinde doğrulama yapılır:
+Tüm bağımlılıklar constructor injection ile dışarıdan verilir. Hiçbir servis veya handler kendi bağımlılığını oluşturmaz.
+
+```go
+personRepo := repository.NewPersonRepo(db)
+authRepo   := repository.NewAuthRepo(db)
+
+authSvc    := service.NewAuthService(authRepo, personRepo, cfg)
+blogSvc    := service.NewBlogService(blogRepo)
+
+authHandler   := handlers.NewAuthHandler(authSvc)
+personHandler := handlers.NewPersonHandler(personRepo)
+```
+
+---
+
+## 7. HTTP Endpoint'leri
+
+### REST API (JSON)
+
+| Method | Path | Handler | Auth |
+|---|---|---|---|
+| `POST` | `/api/login` | `LoginHandler` | — |
+| `POST` | `/api/refresh` | `RefreshHandler` | — |
+| `POST` | `/api/logout` | `LogoutHandler` | JWT |
+| `GET` | `/api/health` | `HealthHandler` | — |
+| `POST` | `/api/add` | `AddPersonHandler` | — |
+| `GET` | `/api/all` | `GetAllPeopleHandler` | JWT |
+| `GET` | `/api/get?id=` | `GetPersonByIDHandler` | JWT |
+| `GET` | `/api/delete?id=` | `DeletePersonHandler` | JWT |
+
+### Web UI (Form/HTML)
+
+| Method | Path | Açıklama | Auth |
+|---|---|---|---|
+| `GET` | `/` | Ana sayfa (yayınlanmış bloglar) | — |
+| `GET` | `/login` | Giriş sayfası | — |
+| `GET` | `/register` | Kayıt sayfası | — |
+| `POST` | `/web-login` | Giriş işlemi (cookie set) | — |
+| `POST` | `/web-register` | Kayıt işlemi (fotoğraf yükleme) | — |
+| `GET` | `/web-logout` | Çıkış (cookie sil) | — |
+| `GET` | `/admin` | Admin paneli | Admin |
+| `POST` | `/user/update` | Kullanıcı güncelleme | Admin |
+| `GET` | `/web-delete?id=` | Kullanıcı silme | Admin |
+| `GET` | `/blogs` | Blog yönetimi | Editor/Admin |
+| `GET` | `/editor` | Editor paneli | Editor/Admin |
+| `POST` | `/blog/create` | Blog oluşturma | Editor/Admin |
+| `POST` | `/blog/update` | Blog güncelleme | Editor/Admin |
+| `GET` | `/blog/delete?id=` | Blog silme | Editor/Admin |
+
+### Diğer
+
+| Path | Açıklama |
+|---|---|
+| `/static/*` | Statik dosyalar |
+| `/uploads/*` | Yüklenen fotoğraflar |
+| `/swagger/*` | Swagger API dokümantasyonu |
+| `/debug/pprof/*` | Go pprof profiling |
+
+---
+
+## 8. Middleware Zinciri
+
+```
+İstek → LoggingMiddleware → CorsMiddleware → mux
+                                                ↓
+                                    JwtAuthMiddleware (korumalı route'lar)
+                                                ↓
+                                    AdminMiddleware / EditorMiddleware
+                                                ↓
+                                    RateLimiter.Middleware (login için)
+                                                ↓
+                                    Handler
+```
+
+| Middleware | Dosya | Görev |
+|---|---|---|
+| `LoggingMiddleware` | `shared/logging.go` | Her isteği JSON olarak loglar |
+| `CorsMiddleware` | `shared/cors.go` | Cross-origin header'ları ekler |
+| `JwtAuthMiddleware` | `handlers/auth_handler.go` | Bearer token doğrular, userID context'e yazar |
+| `AdminMiddleware` | `handlers/role_middleware.go` | Admin rolü zorunlu kılar |
+| `EditorMiddleware` | `handlers/role_middleware.go` | Editor veya admin rolü zorunlu kılar |
+| `RateLimiter.Middleware` | `shared/rate_limiter.go` | IP başına istek sınırlar |
+
+---
+
+## 9. Veritabanı Şeması
+
+```sql
+-- Kullanıcılar
+CREATE TABLE people (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    surname       TEXT,
+    email         TEXT NOT NULL UNIQUE,
+    age           INTEGER,
+    phone         TEXT,
+    photo_path    TEXT,
+    role          TEXT NOT NULL DEFAULT 'editor',
+    password_hash TEXT NOT NULL
+);
+
+-- Refresh token'lar
+CREATE TABLE refresh_tokens (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL,
+    token      TEXT NOT NULL UNIQUE,
+    revoked    INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    revoked_at TEXT
+);
+
+-- Bloglar
+CREATE TABLE blogs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    summary     TEXT,
+    image_path  TEXT,
+    author_id   INTEGER NOT NULL,
+    author_name TEXT NOT NULL,
+    published   INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    FOREIGN KEY (author_id) REFERENCES people(id)
+);
+```
+
+---
+
+## 10. Kimlik Doğrulama ve Yetkilendirme Akışı
+
+### Giriş (Login)
+
+```
+1. POST /api/login → email + password
+2. authService.Login(ctx, email, password)
+   a. repo.GetPersonByEmail(ctx, email) → Person
+   b. bcrypt.CompareHashAndPassword(hash, password)
+3. GenerateAccessToken(userID)  → imzalı JWT (15 dk)
+4. GenerateRefreshToken(ctx, userID) → imzalı JWT (7 gün) + DB'ye kaydedilir
+5. Response: { accessToken, refreshToken }
+```
+
+### Token Yenileme (Refresh)
+
+```
+1. POST /api/refresh → refreshToken
+2. IsRefreshTokenValid(ctx, token) → DB'de revoked değil mi?
+3. ParseRefreshToken(token) → userID
+4. GenerateAccessToken(userID) → yeni access token
+5. Response: { accessToken }
+```
+
+### Çıkış (Logout)
+
+```
+1. POST /api/logout → refreshToken
+2. IsRefreshTokenValid(ctx, token) → geçerli mi?
+3. RevokeRefreshToken(ctx, token) → DB'de revoked=1
+4. Response: 200 OK
+```
+
+### Web Oturumu
+
+Web route'larında token cookie'de (`auth_token`) taşınır. `GetTemplateData()` her istekte cookie'yi okur, JWT'yi parse eder ve kullanıcı bilgisini yükler.
+
+---
+
+## 11. Validasyon
+
+`shared/validation.go` içindeki `Validator` struct fluent interface sunar:
 
 ```go
 v := shared.NewValidator()
-v.ValidateName(req.Name, "İsim").ValidateEmail(req.Email).ValidatePassword(req.Password)
-if v.HasError() {
-    shared.HandleCustomError(w, v.GetErrorAsCustomError())
+v.RequireNonEmpty(req.Name, "name").
+  ValidateName(req.Name, "name").
+  ValidateEmail(req.Email).
+  ValidatePassword(req.Password).
+  ValidateAge(req.Age).
+  ValidatePhone(req.Phone)
+
+if v.HasErrors() {
+    // v.Errors() → []string
 }
 ```
 
-#### Temel Validator Metodları
-
-| Metod | Kural |
+| Kural | Detay |
 |---|---|
-| `ValidateName(name, fieldName)` | Boş olamaz, 2-50 karakter |
-| `ValidateEmail(email)` | Regex ile format kontrolü |
-| `ValidatePassword(password)` | 6-50 karakter, en az 1 büyük harf, en az 1 rakam |
-| `ValidateAge(age)` | 0-150 arası |
-| `ValidatePhone(phone)` | İsteğe bağlı, format regex kontrolü (10-20 karakter) |
-| `ValidateRole(role)` | `admin` veya `editor` olmalı |
-| `ValidateRequired(value, fieldName)` | Boş string olamaz (TrimSpace ile) |
-| `ValidateMaxLength(value, fieldName, max)` | Maksimum karakter uzunluğu |
-| `ValidateMinLength(value, fieldName, min)` | Minimum karakter uzunluğu |
-| `ValidateNumeric(value, fieldName)` | Sayısal değer kontrolü |
+| Email | Standart format kontrolü |
+| Şifre | 6-50 karakter, en az 1 büyük harf, en az 1 rakam |
+| İsim/Soyisim | 2-50 karakter |
+| Yaş | 0-150 |
+| Telefon | 10-20 karakter |
 
-#### Bileşik Validator Metodları
+---
 
-| Metod | Açıklama |
-|---|---|
-| `ValidateCreatePersonRequest(req)` | Yeni kullanıcı oluşturma için tüm alanları doğrular |
-| `ValidateUpdatePersonRequest(req)` | Kullanıcı güncelleme için tüm alanları doğrular (şifre isteğe bağlı) |
-| `ValidateBlogRequest(title, content, summary)` | Başlık 3-200 karakter, içerik min 10 karakter, özet max 500 karakter |
+## 12. Dosya Yükleme
 
-#### Sonuç Metodları
+`repository/photo_repo.go` — kullanıcı fotoğrafı ve blog görseli yükleme:
 
-| Metod | Açıklama |
-|---|---|
-| `HasError() bool` | Hata var mı? |
-| `GetError() string` | Hataları `"; "` ile birleştirip döner |
-| `GetErrorAsCustomError() *CustomError` | `CustomError` olarak döner (HTTP handler'larla entegre) |
+- İzin verilen uzantılar: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
+- Güvenli dosya adı: UUID tabanlı rastgele isim (path traversal koruması)
+- Konum: `static/uploads/`
+- Güncelleme/silme sırasında eski dosya diskten kaldırılır
 
-Yardımcı fonksiyon: `ParseIntFromForm(s string) int` — form değerini int'e çevirir, hata durumunda 0 döner.
+---
 
-### 12.6. Template Veri Yönetimi (`web_helpers.go`)
+## 13. Loglama
 
-`GetTemplateData(r)` her sayfa handler'ının başında çağrılır:
-1. `auth_token` cookie'sini okur
-2. Token'ı parse eder → `IsAuthenticated = true`
-3. `GetPersonByID` ile kullanıcı adı ve rolü alır
-4. `success_message` cookie'sini kontrol eder (form redirect sonrası mesaj gösterimi için)
-5. `?registered=true` URL parametresini kontrol eder
+`shared/logging.go` — yapılandırılmış JSON formatı:
 
 ```go
-type TemplateData struct {
-    Title           string
-    IsAuthenticated bool
-    UserName        string
-    UserRole        string
-    Users           []models.PersonResponse
-    Blogs           []models.BlogResponse
-    ErrorMessage    string
-    SuccessMessage  string
-}
+shared.LogInfo("BLOG_CREATED", "Blog created successfully", map[string]interface{}{
+    "author_id": claims.UserID,
+})
+shared.LogError("BLOG_DELETE_ERROR", "Failed to delete blog", map[string]interface{}{
+    "blog_id": blogID,
+    "error":   err.Error(),
+})
 ```
+
+- Her log satırı JSON objesidir
+- `app.log` dosyasına yazılır
+- `LoggingMiddleware` tüm HTTP isteklerini (method, path, status, süre) loglar
 
 ---
 
-## 13. Arayüz Katmanı (Templates + JS)
+## 14. Rate Limiting
 
-### 13.1. Şablon Sistemi
+`shared/rate_limiter.go` — IP tabanlı fixed-window:
 
-Tüm sayfalar `layout.html` temel şablonunu kullanır. Layout içerir:
-- Bootstrap 5 (CDN)
-- Navbar — role göre dinamik:
-  - Giriş yapılmamışsa: Giriş, Kayıt Ol
-  - `admin` rolündeyse: kullanıcı adı, Admin Panel, Swagger, pprof, Çıkış
-  - `editor` rolündeyse: kullanıcı adı, Editor Panel, Çıkış
-- Global alert alanı — hata ve başarı mesajları, 5 saniye sonra otomatik kapanır
-- `/static/js/app.js`
-
-### 13.2. Sayfalar
-
-| Şablon | Açıklama |
-|---|---|
-| `home.html` | Yayınlanmış blog'ları kart görünümünde listeler, giriş yapmadan erişilebilir |
-| `login.html` | E-posta ve şifre ile giriş formu |
-| `register.html` | Kayıt formu: isim, soyisim, e-posta, yaş, telefon, rol, fotoğraf, şifre |
-| `admin.html` | Kullanıcı listesi tablosu + kullanıcı ekleme/düzenleme modal'ları + Blog Yönetimi bağlantısı |
-| `editor.html` | Editor'ün kendi blog'larının tablosu + blog ekleme/düzenleme modal'ları |
-| `blog.html` | Admin/editor için blog yönetim tablosu + modal'lar |
-
-### 13.3. JavaScript (`static/js/app.js`)
-
-**`deleteUser(userId)`**
-- `GET /web-delete?id=userId` AJAX isteği
-- Başarılıysa `location.reload()` ile sayfayı yeniler
-
-**`editUser(userId, name, surname, email, age, phone, role, photoPath)`**
-- Düzenleme modal'ının alanlarını doldurur
-- Mevcut fotoğrafı önizleme olarak gösterir
-- Bootstrap Modal API ile modal'ı açar
-
-### 13.4. Blog Edit — Inline Data Attributes Yaklaşımı
-
-Blog düzenleme için ek API çağrısı yapılmaz. Veriler sunucu taraflı render sırasında `data-*` attribute'larına gömülür:
-
-```html
-<button data-blog-id="{{.ID}}"
-        data-title="{{.Title}}"
-        data-content="{{.Content}}"
-        data-summary="{{.Summary}}"
-        data-published="{{.Published}}"
-        onclick="editBlog(this)">
+```go
+limiter := shared.NewRateLimiter(10, time.Minute) // 10 istek/dakika
+mux.Handle("/api/login", limiter.Middleware(loginHandler))
 ```
 
-`editBlog(btn)` fonksiyonu bu attribute'ları okuyarak modal'ı doldurur. Go'nun `html/template` paketi tüm değerleri otomatik HTML-escape eder.
+- Her IP için ayrı sayaç tutulur
+- Pencere dolunca `429 Too Many Requests` döner
+- Süresi dolmuş kayıtlar arka planda temizlenir
 
 ---
 
-## 14. Tipik Kullanım Akışları
+## 15. Test Yapısı
 
-### 14.1. Admin Girişi
+### Unit Testler
 
-```
-/login  →  POST /web-login  →  auth_token cookie set  →  /admin
-```
-
-Admin panelinde:
-- Tüm kullanıcıları listeler
-- Modal ile yeni kullanıcı ekler
-- Modal ile kullanıcı düzenler (ad, soyad, e-posta, şifre, fotoğraf, rol)
-- AJAX ile kullanıcı siler
-- `/blogs` üzerinden tüm blog'ları yönetir
-
-### 14.2. Editor Girişi
-
-```
-/login  →  POST /web-login  →  auth_token cookie set  →  /editor
-```
-
-Editor panelinde:
-- Yalnızca kendi blog'larını listeler
-- Modal ile yeni blog ekler (`/blog/create`)
-- Modal ile blog düzenler (`/blog/update`)
-- Blog siler (`/blog/delete`)
-
-### 14.3. REST API Akışı
-
-```
-POST /api/login  →  { accessToken, refreshToken }
-                         ↓
-GET /api/all  (Authorization: Bearer <accessToken>)
-                         ↓
-POST /api/refresh  →  yeni accessToken  (token süresi dolduğunda)
-                         ↓
-POST /api/logout  →  refresh token DB'de revoke edilir
-```
-
-### 14.4. Blog Yayınlama
-
-```
-Editor paneli  →  "Yeni Blog Ekle" modal  →  "Yayınla" checkbox işaretle
-POST /blog/create  →  published=1  →  Ana sayfada kart olarak görünür
-```
-
----
-
-## 15. Güvenlik Notları
-
-- **Şifre:** Asla düz metin tutulmaz, bcrypt ile hashlenir (default cost).
-- **JWT Secret'ları:** Ortam değişkenleri üzerinden yapılandırılır. Production ortamında varsayılan değerler bırakılırsa uygulama panic verir.
-- **HttpOnly Cookie:** Web UI'da auth cookie `HttpOnly: true` ile set edilir; tarayıcı JavaScript'i erişemez.
-- **Email Benzersizliği:** Hem uygulama katmanında (`EmailExists`) hem DB `UNIQUE` constraint'i ile çift kayıt engellenir.
-- **Fotoğraf Yükleme:** Yalnızca belirli uzantılara izin verilir, rastgele dosya adı kullanılır, path traversal kontrolü yapılır. Güncelleme işlemlerinde eski dosya diskten otomatik silinir.
-- **Rate Limiting:** `/api/login` ve `/web-login` endpoint'leri için IP başına dakikada 10 istek sınırı uygulanır; aşıldığında `429 Too Many Requests` döner.
-- **Rol Kontrolü:** Her korumalı route hem middleware'de hem handler içinde tekrar kontrol edilir.
-- **Statik Dosya Güvenliği:** `StaticHandler`, path traversal saldırılarına karşı `filepath.Abs` ile yol doğrulaması yapar.
-- **CORS:** Şu an `*` (herkese açık). Production'da belirli origin'lerle kısıtlanmalıdır.
-
----
-
-## 16. Gelecekte Eklenecekler
-
-### 16.1. Kullanıcı Deneyimi
-- **Blog Arama ve Filtreleme** — Başlık, yazar, tarih aralığı ve yayın durumuna göre arama
-- **Sayfalama (Pagination)** — Kullanıcı listesi ve blog listesi için sayfa sistemi
-- **Kullanıcı Profil Sayfası** — Her kullanıcının kendi bilgilerini görüp düzenleyeceği sayfa
-- **Admin Dashboard İstatistikleri** — Toplam kullanıcı, toplam blog, taslak/yayın sayısı gibi özet kartlar
-- **Blog Kategorileri ve Etiketler** — Blog'ları gruplamak ve filtrelemek için
-- **Blog Detay Sayfası** — Ana sayfadaki kart'a tıklandığında açılan tam içerik sayfası
-
-### 16.2. Altyapı ve Güvenlik
-- **Şifre Sıfırlama Akışı** — E-posta ile doğrulama ve şifre yenileme
-- **E-posta Doğrulama** — Kayıt sonrası e-posta onayı
-- **CORS Origin Kısıtlaması** — `*` yerine belirli origin listesi
-- **Production Docker Kurulumu** — `Dockerfile` ve `docker-compose.yml`
-- **Prometheus + Grafana** — pprof'un yanına görsel monitoring dashboard'u (Docker Compose ile)
-
-### 16.3. API Geliştirmeleri
-- **RESTful URL Yapısı** — `/api/get?id=` yerine `GET /api/people/{id}`, `/api/delete?id=` yerine `DELETE /api/people/{id}`
-- **Blog REST API** — Blog'lar için tam REST API endpoint'leri (`/api/blogs`, `/api/blogs/{id}`)
-- **Token'da Rol Bilgisi** — JWT claims'e rol alanı eklenerek DB sorgusu azaltılabilir
-
-### 16.4. İçerik ve Yönetim
-- **Yorum Sistemi** — Blog yazılarına okuyucu yorumları
-- **Blog Versiyonlama** — Düzenleme geçmişini tutma
-- **Toplu İşlemler** — Admin panelinde birden fazla kaydı tek seferde silme/yayınlama
-
----
-
-## 17. Test Altyapısı
-
-Proje, Go'nun yerleşik `testing` paketi ile yazılmış birim ve integration testleri içerir. Harici test kütüphanesi kullanılmaz.
-
-### 17.1. Test Stratejisi
-
-```
-tests/
-├── Unit testler       → kaynak dosyanın yanında (_test.go)   Go standardı
-└── Integration testler → tests/integration/                  Uçtan uca HTTP
-```
-
-**Neden iki ayrı konum?**
-Unit testler `unexported` sembollere erişmek için kaynak paketiyle aynı dizinde olmalıdır. Integration testler yalnızca dışa açık HTTP API'yi test eder; ayrı paket (`integration_test`) yeterlidir.
-
-### 17.2. Birim Test Dosyaları
-
-| Dosya | Paket | Kapsam |
+| Dosya | Test Sayısı | Kapsam |
 |---|---|---|
-| `shared/validation_test.go` | `shared` | Tüm validator metodları (email, şifre, isim, yaş, telefon, rol, blog, CreatePerson, UpdatePerson) |
-| `shared/errors_test.go` | `shared` | CustomError constructor'ları, WriteError, HandleError, HandleCustomError, WriteSuccess |
-| `shared/rate_limiter_test.go` | `shared` | Allow(), pencere sıfırlanması, Middleware (200/429), X-Forwarded-For, RemoteAddr |
-| `service/auth_service_test.go` | `service` | Login (başarılı/hatalı), token üretimi/parse, refresh kaydetme/revoke — mock repo ile |
-| `handlers/auth_handler_test.go` | `handlers_test` | LoginHandler, RefreshHandler, LogoutHandler, JwtAuthMiddleware — mock service ile |
-| `handlers/registration_pipeline_test.go` | `handlers` | EmailCheckHandler, PersonBuildHandler, PersonSaveHandler, SetNext zinciri, runRegistrationPipeline |
+| `handlers/auth_handler_test.go` | 11 | LoginHandler, RefreshHandler, LogoutHandler, JwtAuthMiddleware |
+| `handlers/registration_pipeline_test.go` | 11 | EmailCheck, PersonBuild, PersonSave, zincir davranışı, runRegistrationPipeline |
+| `service/auth_service_test.go` | 16 | Login, token üretme/parse, refresh token CRUD |
+| `shared/errors_test.go` | — | CustomError tipleri |
+| `shared/validation_test.go` | — | Validator kuralları |
+| `shared/rate_limiter_test.go` | — | Limit aşımı, pencere sıfırlama |
 
-### 17.3. Integration Test Dosyaları (`tests/integration/`)
-
-Gerçek HTTP katmanını uçtan uca test eder: in-memory SQLite veritabanı + `httptest.Server`.
+### Entegrasyon Testleri (`tests/integration/`)
 
 | Dosya | Kapsam |
 |---|---|
-| `setup_test.go` | `TestMain`: in-memory DB kurulumu, schema oluşturma, `AppBuilder.Build()`, `httptest.NewServer` |
-| `health_test.go` | `GET /api/health` → 200 |
-| `auth_test.go` | Kayıt (200/400), Login (200/401), token parse, korumalı endpoint (200/401) |
+| `auth_test.go` | Gerçek HTTP istekleriyle Login/Refresh/Logout akışı |
+| `health_test.go` | `/api/health` endpoint'i |
+| `setup_test.go` | Test sunucusu başlatma ve teardown |
 
-**`cleanTables(t)`** her testin başında tabloları temizler; testler birbirini etkilemez.
+### Mock Yapısı
 
-### 17.4. Test Mimarisi
+Testlerde gerçek DB yerine interface'i implement eden mock struct'lar kullanılır:
 
-- **Birim testler:** Her katman kendi mock bağımlılıklarıyla bağımsız test edilir. Gerçek DB veya HTTP sunucusu kullanılmaz.
-- **Mock'lar:** `service/auth_service_test.go` içinde `mockAuthRepo` ve `mockPersonRepo`; `handlers/auth_handler_test.go` içinde `mockAuthService` tanımlanmıştır. Bunlar ilgili interface'leri karşılayan sade struct'lardır.
-- **White-box testler:** `registration_pipeline_test.go` dosyası `package handlers` ile tanımlanmıştır; `unexported` handler struct'larına doğrudan erişilir. CoR zincir davranışı (`SetNext`, erken durma) da test edilir.
-- **Black-box testler:** `auth_handler_test.go` dosyası `package handlers_test` ile tanımlanmıştır; yalnızca dışa açık API test edilir.
+```go
+// handlers/registration_pipeline_test.go
+type mockPersonRepo struct {
+    emailExists    bool
+    emailExistsErr error
+    addPersonErr   error
+    addPersonID    int64
+}
+func (m *mockPersonRepo) EmailExists(_ context.Context, email string) (bool, error) { ... }
+func (m *mockPersonRepo) AddPerson(_ context.Context, p models.Person) (int64, error) { ... }
+// ... diğer interface metodları
 
-### 17.3. Testleri Çalıştırma Komutları
-
-Tüm komutlar `go-auth-app/` dizininden çalıştırılır.
-
-#### Tüm testleri çalıştır
-
-```bash
-go test ./...
+// service/auth_service_test.go
+type mockAuthRepo struct {
+    saveErr      error
+    isValidResult bool
+    revokeErr    error
+}
 ```
-
-#### Belirli bir paketi test et
-
-```bash
-go test ./shared/...
-go test ./service/...
-go test ./handlers/...
-```
-
-#### Ayrıntılı çıktı ile çalıştır (`-v`)
-
-```bash
-go test ./... -v
-```
-
-#### Tek bir test fonksiyonunu çalıştır
-
-```bash
-go test ./shared/... -run TestValidateEmail
-go test ./service/... -run TestLogin_Basarili
-go test ./handlers/... -run TestLoginHandler_Basarili
-```
-
-#### Test adına göre filtrele (pattern destekler)
-
-```bash
-go test ./... -run TestLogin
-go test ./... -run TestRateLimiter
-```
-
-#### Test kapsamı (coverage) raporu
-
-```bash
-# Terminalde özet
-go test ./... -cover
-
-# HTML raporu oluştur ve tarayıcıda aç
-go test ./... -coverprofile=coverage.out
-go tool cover -html=coverage.out
-```
-
-#### Timeout ile çalıştır (uzun testler için)
-
-```bash
-go test ./... -timeout 60s
-```
-
-#### Paralel test çalıştırma (varsayılan zaten paralel, sayı kısıtlamak için)
-
-```bash
-go test ./... -parallel 4
-```
-
-### 17.4. Beklenen Çıktı
-
-```
-ok  	go-kisi-api/shared    ~2.6s
-ok  	go-kisi-api/service   ~2.4s
-ok  	go-kisi-api/handlers  ~3.4s
-```
-
-Tüm testler geçtiğinde her satır `ok` ile başlar. Herhangi bir `FAIL` görülürse `-v` bayrağıyla ayrıntılı çıktıya bakılabilir.
 
 ---
 
-*Bu doküman projenin güncel halini yansıtır. Yeni özellikler eklendikçe güncellenmesi önerilir.*
+## 16. Konfigürasyon
+
+`shared/config.go` — environment variable'lardan okunur:
+
+| Değişken | Varsayılan | Açıklama |
+|---|---|---|
+| `JWT_ACCESS_SECRET` | `default-access-secret` | Access token imza anahtarı |
+| `JWT_REFRESH_SECRET` | `default-refresh-secret` | Refresh token imza anahtarı |
+| `ACCESS_TOKEN_TTL` | `900` (15 dk) | Access token geçerlilik süresi (saniye) |
+| `REFRESH_TOKEN_TTL` | `604800` (7 gün) | Refresh token geçerlilik süresi (saniye) |
+| `SERVER_PORT` | `:8081` | Sunucu portu |
+| `DATABASE_PATH` | `people.db` | SQLite dosya yolu |
+| `ENVIRONMENT` | `development` | `production` modunda güçlü secret zorunlu |
+
+---
+
+## 17. Uygulama Başlangıcı (`main.go`)
+
+```go
+func main() {
+    db.Init()                          // SQLite başlat, tabloları oluştur
+    repository.SetDB(db.DB)            // Paket seviyesi wrapper'lar için
+
+    var handler http.Handler = http.DefaultServeMux
+    handler = shared.CorsMiddleware(handler)
+    handler = shared.LoggingMiddleware(handler)
+
+    routes.RegisterRoutes()            // AppBuilder ile tüm route'ları kaydet
+
+    http.ListenAndServe(":8081", handler)
+}
+```
+
+---
+
+## 18. SQL Sorguları (`queries/queries.go`)
+
+Tüm SQL sorguları tek dosyada sabit olarak tutulur. Handler veya service içinde ham SQL yoktur.
+
+```go
+const (
+    SelectAllPeople    = `SELECT id, name, surname, email, age, phone, photo_path, role, password_hash FROM people`
+    SelectPersonByID   = `SELECT ... FROM people WHERE id = ?`
+    InsertPerson       = `INSERT INTO people (name, surname, email, age, phone, photo_path, role, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    // ... diğer sorgular
+)
+```
+
+---
+
+## 19. Güvenlik Özeti
+
+| Alan | Önlem |
+|---|---|
+| Şifreler | bcrypt ile hash'lenir, düz metin asla saklanmaz |
+| JWT | Access (15 dk) + Refresh (7 gün) ayrı secret'larla imzalanır |
+| Refresh Token | DB'de saklanır, logout'ta revoke edilir |
+| Dosya yükleme | UUID isim, uzantı kontrolü, path traversal koruması |
+| SQL | Parametreli sorgular (SQL injection yok) |
+| Rate limiting | IP başına login denemesi sınırlandırılır |
+| Rol kontrolü | Her korumalı route'ta middleware seviyesinde kontrol |
+| JSON çıktısı | `PasswordHash` asla serialize edilmez (`json:"-"`) |
+| context.Context | İstemci bağlantıyı kesince DB sorguları iptal edilir |

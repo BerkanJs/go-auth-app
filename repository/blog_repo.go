@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"time"
 
@@ -51,8 +52,8 @@ func scanBlogRow(scanner interface {
 	return blog, nil
 }
 
-func (r *SQLiteBlogRepo) CreateBlog(blog models.Blog) (int64, error) {
-	result, err := r.db.Exec(
+func (r *SQLiteBlogRepo) CreateBlog(ctx context.Context, blog models.Blog) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
 		queries.InsertBlog,
 		blog.Title, blog.Content, blog.Summary, blog.ImagePath,
 		blog.AuthorID, blog.AuthorName, blog.Published,
@@ -64,8 +65,8 @@ func (r *SQLiteBlogRepo) CreateBlog(blog models.Blog) (int64, error) {
 	return result.LastInsertId()
 }
 
-func (r *SQLiteBlogRepo) GetAllBlogs() ([]models.Blog, error) {
-	rows, err := r.db.Query(queries.SelectAllBlogs)
+func (r *SQLiteBlogRepo) GetAllBlogs(ctx context.Context) ([]models.Blog, error) {
+	rows, err := r.db.QueryContext(ctx, queries.SelectAllBlogs)
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +82,8 @@ func (r *SQLiteBlogRepo) GetAllBlogs() ([]models.Blog, error) {
 	return blogs, nil
 }
 
-func (r *SQLiteBlogRepo) GetPublishedBlogs() ([]models.Blog, error) {
-	rows, err := r.db.Query(queries.SelectPublishedBlogs)
+func (r *SQLiteBlogRepo) GetPublishedBlogs(ctx context.Context) ([]models.Blog, error) {
+	rows, err := r.db.QueryContext(ctx, queries.SelectPublishedBlogs)
 	if err != nil {
 		return nil, err
 	}
@@ -98,13 +99,13 @@ func (r *SQLiteBlogRepo) GetPublishedBlogs() ([]models.Blog, error) {
 	return blogs, nil
 }
 
-func (r *SQLiteBlogRepo) GetBlogByID(id int) (models.Blog, error) {
-	row := r.db.QueryRow(queries.SelectBlogByID, id)
+func (r *SQLiteBlogRepo) GetBlogByID(ctx context.Context, id int) (models.Blog, error) {
+	row := r.db.QueryRowContext(ctx, queries.SelectBlogByID, id)
 	return scanBlogRow(row)
 }
 
-func (r *SQLiteBlogRepo) GetBlogsByAuthor(authorID int) ([]models.Blog, error) {
-	rows, err := r.db.Query(queries.SelectBlogsByAuthor, authorID)
+func (r *SQLiteBlogRepo) GetBlogsByAuthor(ctx context.Context, authorID int) ([]models.Blog, error) {
+	rows, err := r.db.QueryContext(ctx, queries.SelectBlogsByAuthor, authorID)
 	if err != nil {
 		return nil, err
 	}
@@ -120,8 +121,8 @@ func (r *SQLiteBlogRepo) GetBlogsByAuthor(authorID int) ([]models.Blog, error) {
 	return blogs, nil
 }
 
-func (r *SQLiteBlogRepo) UpdateBlog(blog models.Blog) error {
-	_, err := r.db.Exec(
+func (r *SQLiteBlogRepo) UpdateBlog(ctx context.Context, blog models.Blog) error {
+	_, err := r.db.ExecContext(ctx,
 		queries.UpdateBlogQuery,
 		blog.Title, blog.Content, blog.Summary, blog.ImagePath,
 		blog.Published, time.Now(), blog.ID,
@@ -129,13 +130,13 @@ func (r *SQLiteBlogRepo) UpdateBlog(blog models.Blog) error {
 	return err
 }
 
-func (r *SQLiteBlogRepo) DeleteBlog(id int) error {
-	_, err := r.db.Exec(queries.DeleteBlogByID, id)
+func (r *SQLiteBlogRepo) DeleteBlog(ctx context.Context, id int) error {
+	_, err := r.db.ExecContext(ctx, queries.DeleteBlogByID, id)
 	return err
 }
 
-func (r *SQLiteBlogRepo) UpdateBlogPublishStatus(id int, published bool) error {
-	_, err := r.db.Exec(queries.UpdateBlogPublishStatusQuery, published, time.Now(), id)
+func (r *SQLiteBlogRepo) UpdateBlogPublishStatus(ctx context.Context, id int, published bool) error {
+	_, err := r.db.ExecContext(ctx, queries.UpdateBlogPublishStatusQuery, published, time.Now(), id)
 	return err
 }
 
@@ -144,11 +145,25 @@ func (r *SQLiteBlogRepo) UpdateBlogPublishStatus(id int, published bool) error {
 var defaultBlogRepo BlogRepository
 
 // Paket düzeyinde wrapper fonksiyonlar — geriye dönük uyumluluk için korunur.
-func CreateBlog(blog models.Blog) (int64, error)           { return defaultBlogRepo.CreateBlog(blog) }
-func GetAllBlogs() ([]models.Blog, error)                  { return defaultBlogRepo.GetAllBlogs() }
-func GetPublishedBlogs() ([]models.Blog, error)            { return defaultBlogRepo.GetPublishedBlogs() }
-func GetBlogByID(id int) (models.Blog, error)              { return defaultBlogRepo.GetBlogByID(id) }
-func GetBlogsByAuthor(id int) ([]models.Blog, error)       { return defaultBlogRepo.GetBlogsByAuthor(id) }
-func UpdateBlog(blog models.Blog) error                    { return defaultBlogRepo.UpdateBlog(blog) }
-func DeleteBlog(id int) error                              { return defaultBlogRepo.DeleteBlog(id) }
-func UpdateBlogPublishStatus(id int, p bool) error         { return defaultBlogRepo.UpdateBlogPublishStatus(id, p) }
+func CreateBlog(ctx context.Context, blog models.Blog) (int64, error) {
+	return defaultBlogRepo.CreateBlog(ctx, blog)
+}
+func GetAllBlogs(ctx context.Context) ([]models.Blog, error) {
+	return defaultBlogRepo.GetAllBlogs(ctx)
+}
+func GetPublishedBlogs(ctx context.Context) ([]models.Blog, error) {
+	return defaultBlogRepo.GetPublishedBlogs(ctx)
+}
+func GetBlogByID(ctx context.Context, id int) (models.Blog, error) {
+	return defaultBlogRepo.GetBlogByID(ctx, id)
+}
+func GetBlogsByAuthor(ctx context.Context, id int) ([]models.Blog, error) {
+	return defaultBlogRepo.GetBlogsByAuthor(ctx, id)
+}
+func UpdateBlog(ctx context.Context, blog models.Blog) error {
+	return defaultBlogRepo.UpdateBlog(ctx, blog)
+}
+func DeleteBlog(ctx context.Context, id int) error { return defaultBlogRepo.DeleteBlog(ctx, id) }
+func UpdateBlogPublishStatus(ctx context.Context, id int, p bool) error {
+	return defaultBlogRepo.UpdateBlogPublishStatus(ctx, id, p)
+}

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -28,8 +29,8 @@ type blogPageRenderer struct {
 func (p *blogPageRenderer) RequiresAuth() bool  { return true }
 func (p *blogPageRenderer) Title() string        { return "Blog Yönetimi" }
 func (p *blogPageRenderer) TemplateName() string { return "blog.html" }
-func (p *blogPageRenderer) LoadData(data *shared.TemplateData, userID int) error {
-	blogs, err := p.blogSvc.GetBlogsForUser(data.UserRole, userID)
+func (p *blogPageRenderer) LoadData(ctx context.Context, data *shared.TemplateData, userID int) error {
+	blogs, err := p.blogSvc.GetBlogsForUser(ctx, data.UserRole, userID)
 	if err != nil {
 		shared.LogError("BLOG_PAGE_ERROR", "Failed to load blogs", map[string]interface{}{"error": err.Error()})
 		return err
@@ -50,8 +51,8 @@ type editorPageRenderer struct {
 func (p *editorPageRenderer) RequiresAuth() bool  { return true }
 func (p *editorPageRenderer) Title() string        { return "Editor Panel" }
 func (p *editorPageRenderer) TemplateName() string { return "editor.html" }
-func (p *editorPageRenderer) LoadData(data *shared.TemplateData, userID int) error {
-	blogs, err := p.blogSvc.GetBlogsForUser(data.UserRole, userID)
+func (p *editorPageRenderer) LoadData(ctx context.Context, data *shared.TemplateData, userID int) error {
+	blogs, err := p.blogSvc.GetBlogsForUser(ctx, data.UserRole, userID)
 	if err != nil {
 		shared.LogError("EDITOR_PAGE_ERROR", "Failed to load blogs", map[string]interface{}{"error": err.Error()})
 		return err
@@ -69,6 +70,7 @@ func (h *BlogHandler) CreateBlogHandler(w http.ResponseWriter, r *http.Request) 
 		http.Redirect(w, r, "/blogs", http.StatusSeeOther)
 		return
 	}
+	ctx := r.Context()
 	data := shared.GetTemplateData(r)
 	if !data.IsAuthenticated {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -97,7 +99,7 @@ func (h *BlogHandler) CreateBlogHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	if _, err := h.blogSvc.CreateBlog(title, content, summary, imagePath, published, claims.UserID, data.UserName); err != nil {
+	if _, err := h.blogSvc.CreateBlog(ctx, title, content, summary, imagePath, published, claims.UserID, data.UserName); err != nil {
 		shared.LogError("BLOG_CREATE_ERROR", "Failed to create blog", map[string]interface{}{"error": err.Error()})
 		data.ErrorMessage = "Blog oluşturulurken bir hata oluştu."
 		renderTemplate(w, "blog.html", data)
@@ -114,6 +116,7 @@ func (h *BlogHandler) UpdateBlogHandler(w http.ResponseWriter, r *http.Request) 
 		http.Redirect(w, r, "/blogs", http.StatusSeeOther)
 		return
 	}
+	ctx := r.Context()
 	data := shared.GetTemplateData(r)
 	if !data.IsAuthenticated {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -149,7 +152,7 @@ func (h *BlogHandler) UpdateBlogHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	err = h.blogSvc.UpdateBlog(blogID, title, content, summary, imagePath, published, data.UserRole, claims.UserID)
+	err = h.blogSvc.UpdateBlog(ctx, blogID, title, content, summary, imagePath, published, data.UserRole, claims.UserID)
 	if err != nil {
 		shared.LogError("BLOG_UPDATE_ERROR", "Failed to update blog", map[string]interface{}{"blog_id": blogID, "error": err.Error()})
 		switch {
@@ -169,6 +172,7 @@ func (h *BlogHandler) UpdateBlogHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *BlogHandler) DeleteBlogHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	data := shared.GetTemplateData(r)
 	if !data.IsAuthenticated {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -188,7 +192,7 @@ func (h *BlogHandler) DeleteBlogHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	err = h.blogSvc.DeleteBlog(blogID, data.UserRole, claims.UserID)
+	err = h.blogSvc.DeleteBlog(ctx, blogID, data.UserRole, claims.UserID)
 	if err != nil {
 		shared.LogError("BLOG_DELETE_ERROR", "Failed to delete blog", map[string]interface{}{"blog_id": blogID, "error": err.Error()})
 		switch {
