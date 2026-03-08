@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -14,21 +15,29 @@ var (
 )
 
 type blogService struct {
-	repo repository.BlogRepository
+	repo  repository.BlogRepository
+	authz AuthorizationStrategy // Strategy: yetki kontrolü dışarıdan enjekte edilir
 }
 
+// NewBlogService, varsayılan olarak OwnerOrAdminStrategy kullanarak blogService oluşturur.
 func NewBlogService(repo repository.BlogRepository) BlogService {
-	return &blogService{repo: repo}
+	return &blogService{repo: repo, authz: &OwnerOrAdminStrategy{}}
 }
 
-func (s *blogService) GetBlogsForUser(userRole string, userID int) ([]models.Blog, error) {
+// NewBlogServiceWithStrategy, özel bir yetki stratejisiyle blogService oluşturur.
+// Test veya farklı iş kuralları için kullanılır.
+func NewBlogServiceWithStrategy(repo repository.BlogRepository, authz AuthorizationStrategy) BlogService {
+	return &blogService{repo: repo, authz: authz}
+}
+
+func (s *blogService) GetBlogsForUser(ctx context.Context, userRole string, userID int) ([]models.Blog, error) {
 	if userRole == "admin" {
-		return s.repo.GetAllBlogs()
+		return s.repo.GetAllBlogs(ctx)
 	}
-	return s.repo.GetBlogsByAuthor(userID)
+	return s.repo.GetBlogsByAuthor(ctx, userID)
 }
 
-func (s *blogService) CreateBlog(title, content, summary, imagePath string, published bool, authorID int, authorName string) (int64, error) {
+func (s *blogService) CreateBlog(ctx context.Context, title, content, summary, imagePath string, published bool, authorID int, authorName string) (int64, error) {
 	blog := models.Blog{
 		Title:      title,
 		Content:    content,
@@ -40,16 +49,17 @@ func (s *blogService) CreateBlog(title, content, summary, imagePath string, publ
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
-	return s.repo.CreateBlog(blog)
+	return s.repo.CreateBlog(ctx, blog)
 }
 
-func (s *blogService) UpdateBlog(blogID int, title, content, summary, imagePath string, published bool, userRole string, userID int) error {
-	existing, err := s.repo.GetBlogByID(blogID)
+func (s *blogService) UpdateBlog(ctx context.Context, blogID int, title, content, summary, imagePath string, published bool, userRole string, userID int) error {
+	existing, err := s.repo.GetBlogByID(ctx, blogID)
 	if err != nil {
 		return ErrBlogNotFound
 	}
 
-	if userRole != "admin" && existing.AuthorID != userID {
+	// Strategy Pattern: yetki kontrolü stratejiye devredilir, if/else zinciri kalktı
+	if !s.authz.IsAuthorized(userRole, userID, existing.AuthorID) {
 		return ErrPermissionDenied
 	}
 
@@ -71,18 +81,19 @@ func (s *blogService) UpdateBlog(blogID int, title, content, summary, imagePath 
 		CreatedAt:  existing.CreatedAt,
 		UpdatedAt:  time.Now(),
 	}
-	return s.repo.UpdateBlog(updated)
+	return s.repo.UpdateBlog(ctx, updated)
 }
 
-func (s *blogService) DeleteBlog(blogID int, userRole string, userID int) error {
-	blog, err := s.repo.GetBlogByID(blogID)
+func (s *blogService) DeleteBlog(ctx context.Context, blogID int, userRole string, userID int) error {
+	blog, err := s.repo.GetBlogByID(ctx, blogID)
 	if err != nil {
 		return ErrBlogNotFound
 	}
 
-	if userRole != "admin" && blog.AuthorID != userID {
+	// Strategy Pattern: UpdateBlog ile aynı strateji, tutarlı yetki kontrolü
+	if !s.authz.IsAuthorized(userRole, userID, blog.AuthorID) {
 		return ErrPermissionDenied
 	}
 
-	return s.repo.DeleteBlog(blogID)
+	return s.repo.DeleteBlog(ctx, blogID)
 }

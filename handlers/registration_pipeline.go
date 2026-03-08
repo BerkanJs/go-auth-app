@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 
 	"go-kisi-api/models"
@@ -14,51 +15,93 @@ type registrationContext struct {
 	Person models.Person
 }
 
-type registrationStep func(*registrationContext, repository.PersonRepository) error
-
 var errEmailAlreadyExists = errors.New("email already exists")
 
-func runRegistrationPipeline(ctx *registrationContext, repo repository.PersonRepository) error {
-	steps := []registrationStep{
-		ensureEmailNotExistsStep,
-		buildPersonStep,
-		savePersonStep,
-	}
-	for _, step := range steps {
-		if err := step(ctx, repo); err != nil {
-			return err
-		}
+// RegistrationHandler, Chain of Responsibility pattern için handler arayüzü.
+// Her adım bir sonrakini çağırarak zinciri ilerletir.
+type RegistrationHandler interface {
+	SetNext(RegistrationHandler) RegistrationHandler
+	Handle(ctx context.Context, regCtx *registrationContext, repo repository.PersonRepository) error
+}
+
+// BaseRegistrationHandler, next zincir referansını ve handleNext yardımcısını taşır.
+type BaseRegistrationHandler struct {
+	next RegistrationHandler
+}
+
+// SetNext, bir sonraki handler'ı ayarlar ve onu döner (akıcı zincirleme için).
+func (b *BaseRegistrationHandler) SetNext(h RegistrationHandler) RegistrationHandler {
+	b.next = h
+	return h
+}
+
+// handleNext, zincirde bir sonraki handler varsa onu çalıştırır.
+func (b *BaseRegistrationHandler) handleNext(ctx context.Context, regCtx *registrationContext, repo repository.PersonRepository) error {
+	if b.next != nil {
+		return b.next.Handle(ctx, regCtx, repo)
 	}
 	return nil
 }
 
-func ensureEmailNotExistsStep(ctx *registrationContext, repo repository.PersonRepository) error {
-	exists, err := repo.EmailExists(ctx.Req.Email)
+// EmailCheckHandler, email'in daha önce kayıtlı olup olmadığını kontrol eder.
+type EmailCheckHandler struct {
+	BaseRegistrationHandler
+}
+
+func (h *EmailCheckHandler) Handle(ctx context.Context, regCtx *registrationContext, repo repository.PersonRepository) error {
+	exists, err := repo.EmailExists(ctx, regCtx.Req.Email)
 	if err != nil {
 		return err
 	}
 	if exists {
 		return errEmailAlreadyExists
 	}
-	return nil
+	return h.handleNext(ctx, regCtx, repo)
 }
 
-func buildPersonStep(ctx *registrationContext, repo repository.PersonRepository) error {
-	person, err := buildPersonFromCreateRequest(ctx.Req)
+// PersonBuildHandler, şifreyi hash'leyerek Person modelini oluşturur.
+type PersonBuildHandler struct {
+	BaseRegistrationHandler
+}
+
+func (h *PersonBuildHandler) Handle(ctx context.Context, regCtx *registrationContext, repo repository.PersonRepository) error {
+	person, err := buildPersonFromCreateRequest(regCtx.Req)
 	if err != nil {
 		return err
 	}
-	ctx.Person = person
-	return nil
+	regCtx.Person = person
+	return h.handleNext(ctx, regCtx, repo)
 }
 
-func savePersonStep(ctx *registrationContext, repo repository.PersonRepository) error {
-	id, err := repo.AddPerson(ctx.Person)
+// PersonSaveHandler, Person'ı veritabanına kaydeder.
+type PersonSaveHandler struct {
+	BaseRegistrationHandler
+}
+
+func (h *PersonSaveHandler) Handle(ctx context.Context, regCtx *registrationContext, repo repository.PersonRepository) error {
+	id, err := repo.AddPerson(ctx, regCtx.Person)
 	if err != nil {
 		return err
 	}
-	ctx.Person.ID = int(id)
-	return nil
+	regCtx.Person.ID = int(id)
+	return h.handleNext(ctx, regCtx, repo)
+}
+
+// NewRegistrationChain, CoR zincirini kurar ve ilk handler'ı döner.
+// Sıra: EmailCheck → PersonBuild → PersonSave
+func NewRegistrationChain() RegistrationHandler {
+	emailCheck := &EmailCheckHandler{}
+	personBuild := &PersonBuildHandler{}
+	personSave := &PersonSaveHandler{}
+
+	emailCheck.SetNext(personBuild).SetNext(personSave)
+
+	return emailCheck
+}
+
+// runRegistrationPipeline, her çağrıda yeni bir CoR zinciri oluşturarak çalıştırır.
+func runRegistrationPipeline(ctx context.Context, regCtx *registrationContext, repo repository.PersonRepository) error {
+	return NewRegistrationChain().Handle(ctx, regCtx, repo)
 }
 
 func buildPersonFromCreateRequest(req models.CreatePersonRequest) (models.Person, error) {

@@ -7,8 +7,20 @@ import (
 	"go-kisi-api/shared"
 )
 
-// RoleMiddleware belirli rollere erişim kontrolü yapar.
-func RoleMiddleware(allowedRoles ...string) func(http.HandlerFunc) http.HandlerFunc {
+// RoleChecker, PersonRepository bağımlılığını enjekte ederek
+// rol tabanlı yetki kontrolü yapar. Global paket fonksiyonları yerine
+// struct metotları kullanılır — test edilebilirlik ve esneklik sağlar.
+type RoleChecker struct {
+	personRepo repository.PersonRepository
+}
+
+// NewRoleChecker, belirtilen repo ile bir RoleChecker oluşturur.
+func NewRoleChecker(personRepo repository.PersonRepository) *RoleChecker {
+	return &RoleChecker{personRepo: personRepo}
+}
+
+// Middleware, izin verilen rolleri kontrol eden bir HTTP middleware döner.
+func (rc *RoleChecker) Middleware(allowedRoles ...string) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			cookie, err := r.Cookie("auth_token")
@@ -23,7 +35,8 @@ func RoleMiddleware(allowedRoles ...string) func(http.HandlerFunc) http.HandlerF
 				return
 			}
 
-			person, err := repository.GetPersonByID(claims.UserID)
+			// Enjekte edilen repo kullanılır — global paket fonksiyonu değil
+			person, err := rc.personRepo.GetPersonByID(r.Context(), claims.UserID)
 			if err != nil {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return
@@ -47,12 +60,12 @@ func RoleMiddleware(allowedRoles ...string) func(http.HandlerFunc) http.HandlerF
 	}
 }
 
-// AdminMiddleware sadece admin rolüne erişim verir.
-func AdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return RoleMiddleware("admin")(next)
+// AdminMiddleware, yalnızca admin rolüne erişim verir.
+func (rc *RoleChecker) AdminMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return rc.Middleware("admin")(next)
 }
 
-// EditorMiddleware editor ve admin rollerine erişim verir.
-func EditorMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return RoleMiddleware("editor", "admin")(next)
+// EditorMiddleware, editor ve admin rollerine erişim verir.
+func (rc *RoleChecker) EditorMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return rc.Middleware("editor", "admin")(next)
 }

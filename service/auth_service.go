@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -40,8 +41,8 @@ func NewAuthService(ar repository.AuthRepository, pr repository.PersonRepository
 	}
 }
 
-func (s *authService) Login(email, password string) (models.Person, error) {
-	person, err := s.personRepo.GetPersonByEmail(email)
+func (s *authService) Login(ctx context.Context, email, password string) (models.Person, error) {
+	person, err := s.personRepo.GetPersonByEmail(ctx, email)
 	if err != nil {
 		return models.Person{}, ErrInvalidCredentials
 	}
@@ -63,7 +64,7 @@ func (s *authService) GenerateAccessToken(userID int) (string, error) {
 	return token.SignedString(s.accessSecret)
 }
 
-func (s *authService) GenerateRefreshToken(userID int) (string, error) {
+func (s *authService) GenerateRefreshToken(ctx context.Context, userID int) (string, error) {
 	claims := authClaims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -76,14 +77,14 @@ func (s *authService) GenerateRefreshToken(userID int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := s.authRepo.SaveRefreshToken(userID, tokenStr); err != nil {
+	if err := s.authRepo.SaveRefreshToken(ctx, userID, tokenStr); err != nil {
 		return "", err
 	}
 	return tokenStr, nil
 }
 
-func (s *authService) IsRefreshTokenValid(token string) (bool, error) {
-	return s.authRepo.IsRefreshTokenValid(token)
+func (s *authService) IsRefreshTokenValid(ctx context.Context, token string) (bool, error) {
+	return s.authRepo.IsRefreshTokenValid(ctx, token)
 }
 
 func (s *authService) ParseRefreshToken(tokenStr string) (int, error) {
@@ -99,6 +100,6 @@ func (s *authService) ParseRefreshToken(tokenStr string) (int, error) {
 	return 0, jwt.ErrTokenInvalidClaims
 }
 
-func (s *authService) RevokeRefreshToken(token string) error {
-	return s.authRepo.RevokeRefreshToken(token)
+func (s *authService) RevokeRefreshToken(ctx context.Context, token string) error {
+	return s.authRepo.RevokeRefreshToken(ctx, token)
 }

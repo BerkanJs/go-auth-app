@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ func newMockAuthRepo() *mockAuthRepo {
 	return &mockAuthRepo{tokens: make(map[string]bool)}
 }
 
-func (m *mockAuthRepo) SaveRefreshToken(userID int, token string) error {
+func (m *mockAuthRepo) SaveRefreshToken(_ context.Context, userID int, token string) error {
 	if m.saveErr != nil {
 		return m.saveErr
 	}
@@ -31,7 +32,7 @@ func (m *mockAuthRepo) SaveRefreshToken(userID int, token string) error {
 	return nil
 }
 
-func (m *mockAuthRepo) IsRefreshTokenValid(token string) (bool, error) {
+func (m *mockAuthRepo) IsRefreshTokenValid(_ context.Context, token string) (bool, error) {
 	if m.isValidErr != nil {
 		return false, m.isValidErr
 	}
@@ -39,7 +40,7 @@ func (m *mockAuthRepo) IsRefreshTokenValid(token string) (bool, error) {
 	return ok && valid, nil
 }
 
-func (m *mockAuthRepo) RevokeRefreshToken(token string) error {
+func (m *mockAuthRepo) RevokeRefreshToken(_ context.Context, token string) error {
 	if m.revokeErr != nil {
 		return m.revokeErr
 	}
@@ -52,15 +53,21 @@ type mockPersonRepo struct {
 	findErr error
 }
 
-func (m *mockPersonRepo) GetPersonByEmail(email string) (models.Person, error) {
+func (m *mockPersonRepo) GetPersonByEmail(_ context.Context, email string) (models.Person, error) {
 	return m.person, m.findErr
 }
-func (m *mockPersonRepo) AddPerson(p models.Person) (int64, error)    { return 1, nil }
-func (m *mockPersonRepo) GetAllPeople() ([]models.Person, error)      { return nil, nil }
-func (m *mockPersonRepo) GetPersonByID(id int) (models.Person, error) { return models.Person{}, nil }
-func (m *mockPersonRepo) EmailExists(email string) (bool, error)      { return false, nil }
-func (m *mockPersonRepo) DeletePerson(id int) error                   { return nil }
-func (m *mockPersonRepo) UpdatePerson(p models.Person) error          { return nil }
+func (m *mockPersonRepo) AddPerson(_ context.Context, p models.Person) (int64, error) {
+	return 1, nil
+}
+func (m *mockPersonRepo) GetAllPeople(_ context.Context) ([]models.Person, error) { return nil, nil }
+func (m *mockPersonRepo) GetPersonByID(_ context.Context, id int) (models.Person, error) {
+	return models.Person{}, nil
+}
+func (m *mockPersonRepo) EmailExists(_ context.Context, email string) (bool, error) {
+	return false, nil
+}
+func (m *mockPersonRepo) DeletePerson(_ context.Context, id int) error   { return nil }
+func (m *mockPersonRepo) UpdatePerson(_ context.Context, p models.Person) error { return nil }
 
 // --- Yardımcı ---
 
@@ -84,7 +91,7 @@ func TestLogin_Basarili(t *testing.T) {
 	}
 	svc := newTestAuthService(newMockAuthRepo(), personRepo)
 
-	person, err := svc.Login("test@example.com", "Test123")
+	person, err := svc.Login(context.Background(), "test@example.com", "Test123")
 	if err != nil {
 		t.Fatalf("hata beklenmiyordu: %v", err)
 	}
@@ -100,7 +107,7 @@ func TestLogin_YanlisŞifre(t *testing.T) {
 	}
 	svc := newTestAuthService(newMockAuthRepo(), personRepo)
 
-	_, err := svc.Login("test@example.com", "YanlisŞifre1")
+	_, err := svc.Login(context.Background(), "test@example.com", "YanlisŞifre1")
 	if !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("ErrInvalidCredentials beklendi, alınan=%v", err)
 	}
@@ -110,7 +117,7 @@ func TestLogin_KullaniciBulunamadi(t *testing.T) {
 	personRepo := &mockPersonRepo{findErr: errors.New("bulunamadı")}
 	svc := newTestAuthService(newMockAuthRepo(), personRepo)
 
-	_, err := svc.Login("yok@example.com", "Test123")
+	_, err := svc.Login(context.Background(), "yok@example.com", "Test123")
 	if !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("ErrInvalidCredentials beklendi, alınan=%v", err)
 	}
@@ -147,12 +154,12 @@ func TestGenerateRefreshToken_RepoyaKaydeder(t *testing.T) {
 	authRepo := newMockAuthRepo()
 	svc := newTestAuthService(authRepo, &mockPersonRepo{})
 
-	token, err := svc.GenerateRefreshToken(10)
+	token, err := svc.GenerateRefreshToken(context.Background(), 10)
 	if err != nil {
 		t.Fatalf("refresh token üretilemedi: %v", err)
 	}
 
-	valid, _ := authRepo.IsRefreshTokenValid(token)
+	valid, _ := authRepo.IsRefreshTokenValid(context.Background(), token)
 	if !valid {
 		t.Error("token repo'ya kaydedilmedi")
 	}
@@ -163,7 +170,7 @@ func TestGenerateRefreshToken_RepoHatasi(t *testing.T) {
 	authRepo.saveErr = errors.New("db bağlantı hatası")
 	svc := newTestAuthService(authRepo, &mockPersonRepo{})
 
-	_, err := svc.GenerateRefreshToken(10)
+	_, err := svc.GenerateRefreshToken(context.Background(), 10)
 	if err == nil {
 		t.Error("repo hatası durumunda hata beklendi")
 	}
@@ -174,7 +181,7 @@ func TestGenerateRefreshToken_RepoHatasi(t *testing.T) {
 func TestParseRefreshToken_Basarili(t *testing.T) {
 	svc := newTestAuthService(newMockAuthRepo(), &mockPersonRepo{})
 
-	token, _ := svc.GenerateRefreshToken(99)
+	token, _ := svc.GenerateRefreshToken(context.Background(), 99)
 	userID, err := svc.ParseRefreshToken(token)
 	if err != nil {
 		t.Fatalf("parse hatası: %v", err)
@@ -205,7 +212,7 @@ func TestParseRefreshToken_YanlisSecret(t *testing.T) {
 		refreshTTL:    3600 * time.Second,
 	}
 
-	token, _ := svc1.GenerateRefreshToken(5)
+	token, _ := svc1.GenerateRefreshToken(context.Background(), 5)
 	_, err := svc2.ParseRefreshToken(token)
 	if err == nil {
 		t.Error("farklı secret ile parse hatası beklendi")
@@ -218,8 +225,8 @@ func TestIsRefreshTokenValid_GecerliToken(t *testing.T) {
 	authRepo := newMockAuthRepo()
 	svc := newTestAuthService(authRepo, &mockPersonRepo{})
 
-	token, _ := svc.GenerateRefreshToken(5)
-	valid, err := svc.IsRefreshTokenValid(token)
+	token, _ := svc.GenerateRefreshToken(context.Background(), 5)
+	valid, err := svc.IsRefreshTokenValid(context.Background(), token)
 	if err != nil {
 		t.Fatalf("hata beklenmiyordu: %v", err)
 	}
@@ -232,13 +239,13 @@ func TestRevokeRefreshToken_TokenGecersizKilar(t *testing.T) {
 	authRepo := newMockAuthRepo()
 	svc := newTestAuthService(authRepo, &mockPersonRepo{})
 
-	token, _ := svc.GenerateRefreshToken(5)
+	token, _ := svc.GenerateRefreshToken(context.Background(), 5)
 
-	if err := svc.RevokeRefreshToken(token); err != nil {
+	if err := svc.RevokeRefreshToken(context.Background(), token); err != nil {
 		t.Fatalf("revoke hatası: %v", err)
 	}
 
-	valid, err := svc.IsRefreshTokenValid(token)
+	valid, err := svc.IsRefreshTokenValid(context.Background(), token)
 	if err != nil {
 		t.Fatalf("kontrol hatası: %v", err)
 	}
@@ -253,7 +260,7 @@ func TestRevokeRefreshToken_RepoHatasi(t *testing.T) {
 	svc := newTestAuthService(authRepo, &mockPersonRepo{})
 
 	authRepo.tokens["test-token"] = true
-	if err := svc.RevokeRefreshToken("test-token"); err == nil {
+	if err := svc.RevokeRefreshToken(context.Background(), "test-token"); err == nil {
 		t.Error("repo hatası durumunda hata beklendi")
 	}
 }

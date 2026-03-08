@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -28,22 +29,22 @@ type mockAuthService struct {
 	revokeErr     error
 }
 
-func (m *mockAuthService) Login(email, password string) (models.Person, error) {
+func (m *mockAuthService) Login(_ context.Context, email, password string) (models.Person, error) {
 	return m.loginPerson, m.loginErr
 }
 func (m *mockAuthService) GenerateAccessToken(userID int) (string, error) {
 	return m.accessToken, m.accessErr
 }
-func (m *mockAuthService) GenerateRefreshToken(userID int) (string, error) {
+func (m *mockAuthService) GenerateRefreshToken(_ context.Context, userID int) (string, error) {
 	return m.refreshToken, m.refreshErr
 }
-func (m *mockAuthService) IsRefreshTokenValid(token string) (bool, error) {
+func (m *mockAuthService) IsRefreshTokenValid(_ context.Context, token string) (bool, error) {
 	return m.isValidResult, m.isValidErr
 }
 func (m *mockAuthService) ParseRefreshToken(token string) (int, error) {
 	return m.parseUserID, m.parseErr
 }
-func (m *mockAuthService) RevokeRefreshToken(token string) error {
+func (m *mockAuthService) RevokeRefreshToken(_ context.Context, token string) error {
 	return m.revokeErr
 }
 

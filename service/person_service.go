@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 
 	"go-kisi-api/models"
@@ -37,14 +38,14 @@ func NewPersonService(repo repository.PersonRepository) PersonService {
 	return &personService{repo: repo}
 }
 
-func (s *personService) UpdatePerson(req UpdatePersonRequest) error {
-	existing, err := s.repo.GetPersonByID(req.UserID)
+func (s *personService) UpdatePerson(ctx context.Context, req UpdatePersonRequest) error {
+	existing, err := s.repo.GetPersonByID(ctx, req.UserID)
 	if err != nil {
 		return ErrPersonNotFound
 	}
 
 	if req.Email != existing.Email {
-		exists, err := s.repo.EmailExists(req.Email)
+		exists, err := s.repo.EmailExists(ctx, req.Email)
 		if err != nil {
 			return err
 		}
@@ -79,5 +80,5 @@ func (s *personService) UpdatePerson(req UpdatePersonRequest) error {
 		PhotoPath:    photoPath,
 		PasswordHash: passwordHash,
 	}
-	return s.repo.UpdatePerson(updated)
+	return s.repo.UpdatePerson(ctx, updated)
 }

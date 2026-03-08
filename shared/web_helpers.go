@@ -38,7 +38,7 @@ func GetTemplateData(r *http.Request) TemplateData {
 			})
 
 			// Kullanıcı bilgisini al
-			person, err := repository.GetPersonByID(claims.UserID)
+			person, err := repository.GetPersonByID(r.Context(), claims.UserID)
 			if err == nil {
 				data.UserName = person.Name + " " + person.Surname
 				data.UserRole = person.Role

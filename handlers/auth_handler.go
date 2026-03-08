@@ -70,7 +70,8 @@ func (h *AuthHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	person, err := h.authSvc.Login(req.Email, req.Password)
+	ctx := r.Context()
+	person, err := h.authSvc.Login(ctx, req.Email, req.Password)
 	if err != nil {
 		shared.LogAuth("LOGIN_FAILED", req.Email, "Invalid credentials")
 		shared.HandleCustomError(w, shared.NewAuthError("Kullanıcı veya şifre hatalı"))
@@ -84,7 +85,7 @@ func (h *AuthHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshToken, err := h.authSvc.GenerateRefreshToken(person.ID)
+	refreshToken, err := h.authSvc.GenerateRefreshToken(ctx, person.ID)
 	if err != nil {
 		shared.LogError("TOKEN_GENERATE", "Refresh token generation failed", map[string]interface{}{"user_id": person.ID, "error": err})
 		shared.HandleCustomError(w, shared.NewInternalError("Refresh token üretilemedi"))
@@ -114,7 +115,7 @@ func (h *AuthHandler) RefreshHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	valid, err := h.authSvc.IsRefreshTokenValid(req.RefreshToken)
+	valid, err := h.authSvc.IsRefreshTokenValid(r.Context(), req.RefreshToken)
 	if err != nil || !valid {
 		shared.WriteError(w, http.StatusUnauthorized, shared.ErrInvalidRefreshToken, err)
 		return
@@ -154,13 +155,13 @@ func (h *AuthHandler) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	valid, err := h.authSvc.IsRefreshTokenValid(req.RefreshToken)
+	valid, err := h.authSvc.IsRefreshTokenValid(r.Context(), req.RefreshToken)
 	if err != nil || !valid {
 		shared.WriteError(w, http.StatusUnauthorized, shared.ErrInvalidRefreshToken, err)
 		return
 	}
 
-	if err := h.authSvc.RevokeRefreshToken(req.RefreshToken); err != nil {
+	if err := h.authSvc.RevokeRefreshToken(r.Context(), req.RefreshToken); err != nil {
 		shared.WriteError(w, http.StatusInternalServerError, shared.ErrInvalidRefreshToken, err)
 		return
 	}
